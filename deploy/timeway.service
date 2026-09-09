@@ -9,6 +9,8 @@ Group=www
 WorkingDirectory=/www/wwwroot/timeway
 Environment=NODE_ENV=production
 Environment=PORT=4312
+Environment=DATABASE_PATH=/www/wwwroot/timeway/data/production.sqlite
+Environment=PUBLIC_ORIGIN=https://timeway.chhwork.cn
 EnvironmentFile=-/www/wwwroot/timeway/.env
 ExecStart=/bin/sh -c 'export APP_VERSION=$(/usr/bin/git -c safe.directory=/www/wwwroot/timeway rev-parse HEAD); exec /opt/timeway/node/bin/node server.mjs'
 Restart=on-failure
@@ -18,6 +20,7 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectHome=true
 ProtectSystem=strict
+ReadWritePaths=/www/wwwroot/timeway/data
 UMask=0027
 
 [Install]

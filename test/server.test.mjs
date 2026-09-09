@@ -4,14 +4,14 @@ import { once } from 'node:events';
 import { createTimewayServer } from '../server.mjs';
 
 test('public site serves its assets and health, without exposing repository or data', async (t) => {
-  const server = createTimewayServer({ version: 'abc1234' });
+  const server = createTimewayServer({ version: 'abc1234', environment:'test', databasePath:':memory:' });
   server.listen(0, '127.0.0.1');
   await once(server, 'listening');
   t.after(() => new Promise((resolve) => server.close(resolve)));
   const base = `http://127.0.0.1:${server.address().port}`;
   const homepage = await fetch(base);
   assert.equal(homepage.status, 200);
-  assert.match(await homepage.text(), /应用建设中/);
+  assert.match(await homepage.text(), /app.js/);
   assert.match(homepage.headers.get('content-security-policy'), /frame-ancestors 'none'/);
   assert.equal((await fetch(`${base}/styles.css`)).status, 200);
   const health = await fetch(`${base}/healthz`);

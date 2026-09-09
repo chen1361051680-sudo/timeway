@@ -1,0 +1,18 @@
+[Unit]
+Description=Consistent SQLite backup for Timeway
+
+[Service]
+Type=oneshot
+User=www
+Group=www
+WorkingDirectory=/www/wwwroot/timeway
+Environment=NODE_ENV=production
+Environment=DATABASE_PATH=/www/wwwroot/timeway/data/production.sqlite
+Environment=BACKUP_DIR=/var/backups/timeway/sqlite
+EnvironmentFile=-/www/wwwroot/timeway/.env
+ExecStart=/opt/timeway/node/bin/node scripts/backup.mjs
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/var/backups/timeway/sqlite
