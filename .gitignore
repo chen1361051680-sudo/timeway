@@ -1,0 +1,51 @@
+# Local credentials and environment configuration
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.pem
+*.key
+*.p12
+*.pfx
+id_ed25519
+id_rsa
+.ssh/
+secrets/
+
+# Runtime data; never deploy these through Git
+*.sqlite
+*.sqlite3
+*.db
+*.sqlite-*
+*.sqlite3-*
+*.db-*
+/data/
+/storage/
+/uploads/
+/backups/
+*.bak
+
+# Dependencies, builds and test output
+node_modules/
+.next/
+.nuxt/
+.output/
+dist/
+build/
+coverage/
+.cache/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.tsbuildinfo
+
+# Logs, temporary files and local tools
+*.log
+logs/
+tmp/
+temp/
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
