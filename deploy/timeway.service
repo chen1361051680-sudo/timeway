@@ -1,0 +1,24 @@
+[Unit]
+Description=Timeway application
+After=network.target
+
+[Service]
+Type=simple
+User=www
+Group=www
+WorkingDirectory=/www/wwwroot/timeway
+Environment=NODE_ENV=production
+Environment=PORT=4312
+EnvironmentFile=-/www/wwwroot/timeway/.env
+ExecStart=/bin/sh -c 'export APP_VERSION=$(/usr/bin/git -c safe.directory=/www/wwwroot/timeway rev-parse HEAD); exec /opt/timeway/node/bin/node server.mjs'
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=15
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+UMask=0027
+
+[Install]
+WantedBy=multi-user.target

@@ -19,10 +19,28 @@
 
 ## 开发状态
 
-当前为开发准备阶段，仓库包含需求文档及基础 Git 配置，尚未初始化应用框架、依赖或运行命令。选定技术栈后补充本地启动、测试、构建及环境变量说明。
+当前提供首次部署使用的建设中页面及健康检查，使用 Node.js 24 原生 HTTP 服务，无第三方生产依赖、无构建步骤。地图、登录、任务、时间账户和兑换业务尚未实现。
+
+```sh
+npm ci --omit=dev
+npm run check
+npm test
+npm start
+```
+
+本地默认访问 `http://127.0.0.1:4312`，健康检查为 `/healthz`。仅公开首页、样式文件和健康检查，不公开仓库文档、环境文件或数据目录。
+
+运行参数：`PORT` 默认为 `4312`，应用强制监听 `127.0.0.1`；`APP_VERSION` 为部署 commit，由 systemd 启动时从 Git 获取。
 
 `.env`、SQLite 数据库、上传文件、备份和私钥不进入版本管理。环境变量模板仅使用无敏感信息的示例值。
 
 ## 部署
 
 正式地址为 `https://timeway.chhwork.cn`。只有收到明确部署指令后执行，服务器、数据保留及部署验收规则见 [AGENTS.md](./AGENTS.md#部署)。
+
+- 服务：`timeway.service`，模板位于 `deploy/timeway.service`。
+- 独立运行时：`/opt/timeway/node/bin/node`，不依赖其他项目的运行目录。
+- Nginx：`deploy/nginx-http.conf` 用于首次证书申请；`deploy/nginx.conf` 用于正式 HTTPS 反向代理。
+- 应用代码：服务器从 GitHub 私有仓库 clone / fetch，部署指定 commit；不在服务器直接编辑受版本控制的文件。
+- 回滚：确认目标 commit 与数据兼容后，检出原 commit，按该版本要求安装依赖并重启 `timeway.service`；不得通过清理目录删除环境配置或数据。
+- 当前不使用 SQLite，也未提供上传功能；接入数据库后配置一致性备份和定时任务，接入上传后使用 COS 持久化。
