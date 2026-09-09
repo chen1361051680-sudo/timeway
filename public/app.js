@@ -1,156 +1,1034 @@
-import {esc,icon,dateTime,localTime,hours,status,labels,btn,link,empty,field,select,categories,taskCard,bookingCard} from './ui.js';
+import {
+  esc,
+  icon,
+  dateTime,
+  localTime,
+  hours,
+  status,
+  labels,
+  btn,
+  link,
+  empty,
+  field,
+  select,
+  categories,
+  taskCard,
+  bookingCard,
+} from './ui.js';
 
-const root=document.querySelector('#app'),dialog=document.querySelector('#dialog');
-const state={user:null,csrf:null,config:null,tab:'discover',bankTab:'offers',filter:{},mapScope:'all',city:'',showNeeds:true,collapsed:false,scroll:new Map()};
-let renderToken=0,dirty=false,toastTimer,modalSubmit,lastRoute=location.hash||'#map';
-const requester=()=>state.user?.role==='requester';
-const current=()=>location.hash.slice(1)||'map';
-const go=to=>{location.hash=to;};
-function toast(message){const node=document.querySelector('#toast');node.textContent=message;node.classList.add('visible');clearTimeout(toastTimer);toastTimer=setTimeout(()=>node.classList.remove('visible'),4500);}
-async function api(path,method='GET',body){
-  if(body){body={...body};for(const key of ['start','end','deadline'])if(body[key]){const value=new Date(body[key]);if(Number.isNaN(value.getTime()))throw new Error('请填写有效的日期和时间');body[key]=value.toISOString();}}
-  const response=await fetch('/api'+path,{method,headers:{...(body?{'Content-Type':'application/json'}:{}),...(state.csrf?{'X-CSRF-Token':state.csrf}:{}),...(body&&method!=='GET'?{'Idempotency-Key':crypto.randomUUID()}: {})},...(body?{body:JSON.stringify(body)}:{})});
-  const result=await response.json();if(!response.ok){if(response.status===401){state.user=null;go('login');}throw new Error(result.error||'请求失败，请重试');}return result;
+const root = document.querySelector('#app'),
+  dialog = document.querySelector('#dialog');
+const state = {
+  user: null,
+  csrf: null,
+  config: null,
+  tab: 'discover',
+  bankTab: 'offers',
+  filter: {},
+  mapScope: 'all',
+  city: '',
+  showNeeds: true,
+  collapsed: false,
+  scroll: new Map(),
+};
+let renderToken = 0,
+  dirty = false,
+  toastTimer,
+  modalSubmit,
+  lastRoute = location.hash || '#map';
+const requester = () => state.user?.role === 'requester';
+const current = () => location.hash.slice(1) || 'map';
+const go = (to) => {
+  location.hash = to;
+};
+function toast(message) {
+  const node = document.querySelector('#toast');
+  node.textContent = message;
+  node.classList.add('visible');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => node.classList.remove('visible'), 4500);
 }
-function tabs(items,active,action){return `<div class="tabs" role="tablist">${items.map(([id,title])=>btn(esc(title),action,id,active===id?'tab active':'tab',`role="tab" aria-selected="${active===id}"`)).join('')}</div>`;}
-function header(title,back=false){return `<header class="page-head">${back?btn(icon('back'),'back','','icon-button','aria-label="返回"'):''}<h1>${esc(title)}</h1>${btn(icon('bell'),'notices','','icon-button','aria-label="消息通知"')}</header>`;}
-function shell(content,tab='map',title='',back=false){
-  document.documentElement.classList.toggle('large-text',state.user?.settings?.fontSize==='large');
-  return `<div class="app-shell">${state.config?.environment!=='production'?'<div class="dev-banner">开发环境 · 验证码为模拟发送 · 数据与生产隔离</div>':''}${title?header(title,back):''}<main>${content}</main><nav class="bottom-nav" aria-label="主导航">${[['map','map','爱心地图'],['services','grid','服务大厅'],['bank','clock','时间银行'],['profile','user','我的']].map(([id,i,label])=>`<a href="#${id}" class="${tab===id?'active':''}" ${tab===id?'aria-current="page"':''}>${icon(i)}<span>${label}</span></a>`).join('')}</nav></div>`;
+async function api(path, method = 'GET', body) {
+  if (body) {
+    body = { ...body };
+    for (const key of ['start', 'end', 'deadline'])
+      if (body[key]) {
+        const value = new Date(body[key]);
+        if (Number.isNaN(value.getTime())) throw new Error('请填写有效的日期和时间');
+        body[key] = value.toISOString();
+      }
+  }
+  const response = await fetch('/api' + path, {
+    method,
+    headers: {
+      ...(body ? { 'Content-Type': 'application/json' } : {}),
+      ...(state.csrf ? { 'X-CSRF-Token': state.csrf } : {}),
+      ...(body && method !== 'GET' ? { 'Idempotency-Key': crypto.randomUUID() } : {}),
+    },
+    ...(body ? { body: JSON.stringify(body) } : {}),
+  });
+  const result = await response.json();
+  if (!response.ok) {
+    if (response.status === 401) {
+      state.user = null;
+      go('login');
+    }
+    throw new Error(result.error || '请求失败，请重试');
+  }
+  return result;
 }
-function modal(title,html,onSubmit,label='确认'){dialog.innerHTML=`<div class="modal-head"><h2 id="dialog-title">${esc(title)}</h2>${btn(icon('close'),'close','','icon-button','aria-label="关闭弹窗"')}</div>${onSubmit?`<form id="modal-form">${html}<p class="form-error" role="alert"></p><button class="primary wide" type="submit">${esc(label)}</button></form>`:html}`;modalSubmit=onSubmit;if(!dialog.open)dialog.showModal();}
-function formData(form){return Object.fromEntries(new FormData(form));}
-function errorIn(form,error){const node=form.querySelector('.form-error');if(node)node.textContent=error.message;else toast(error.message);}
-async function mutate(path,body,method='POST'){const result=await api(path,method,body);dialog.close();toast('已保存');await render();return result;}
-const reason=(title,path,action,extra={})=>modal(title,field('reason','请填写原因','','textarea'),b=>mutate(path,{...extra,...b,action}));
-function summary(s){return `<div class="stats">${btn(`<strong>${s.places}</strong><span>已点亮地点</span>`,'footprints','','stat')}${btn(`<strong>${s.services}</strong><span>完成服务</span>`,'history','','stat')}${link(`<strong>${hours(s.minutes)}</strong><span>贡献小时</span>`,'bank','stat')}</div>`;}
-function login(){return `<main class="login-page"><div class="login-symbol">${icon('heart')}</div><p class="eyebrow">TIMEWAY · 时光有路</p><h1>让每一份善意<br>都有路可循。</h1><p class="muted">参与一次陪伴，留下一个温暖的足迹。</p><form id="login-form" class="card"><h2>欢迎加入时光有路</h2>${field('phone','手机号码','','tel',true,'inputmode="tel" autocomplete="tel" pattern="1[0-9]{10}" maxlength="11"')}<div class="code-row">${field('code','验证码','','text',true,'inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6"')}${btn('获取验证码','code','','secondary')}</div><p id="code-info" class="notice"></p><label class="check-row"><input name="agreed" type="checkbox" required>我已阅读并同意 ${btn('使用说明与隐私约定','terms','','text-button')}</label><p class="form-error" role="alert"></p><button type="submit" name="role" value="volunteer" class="primary wide">我是志愿者 ${icon('arrow')}</button><button type="submit" name="role" value="requester" class="secondary wide">我是需求方（社区／机构）</button><small>首次登录将注册所选身份；同一手机号对应一个角色。</small></form>${state.config?.environment!=='production'?'<p class="dev-banner">当前为开发环境，获取验证码后会在页面显示模拟验证码。不会发送真实短信。</p>':''}</main>`;}
-function profileFields(){const u=state.user;return `${field('name',requester()?'机构名称':'姓名',u.name)}${field('region','常用服务区域',u.region)}${requester()?field('contact','机构联系人',u.contact)+field('address','机构地址',u.address):field('skills','擅长服务',u.skills,'textarea',false)}<p class="muted">手机号：${esc(u.phone)} · 身份：${requester()?'需求方':'志愿者'}</p>`;}
-function completeProfile(){return `<main class="setup-page"><h1>完善${requester()?'机构':'个人'}资料</h1><p>让${requester()?'志愿者认识你的机构':'社区了解你的服务意愿'}。</p><form id="profile-form" class="card">${profileFields()}<p class="form-error" role="alert"></p><button class="primary wide">保存并进入</button></form></main>`;}
-
-async function mapPage(){
-  const [data,tasks]=await Promise.all([api('/map?scope='+state.mapScope),api('/tasks?kind=help'+(requester()?'&scope=mine':''))]);state.mapData=data;
-  const shown=tasks.filter(t=>!state.city||t.region.includes(state.city));const cells=data.cells.filter(c=>!state.city||c.region.includes(state.city));state.cells=cells;
-  const actions=requester()?shown.filter(t=>t.newApplicants||t.applications.some(a=>['submitted','disputed'].includes(a.status))):shown;
-  return shell(`<section class="map-stage"><div class="map-top">${btn(`${esc(state.city||state.user.region||'选择地区')}⌄`,'city','','city-button')}${btn(icon('bell'),'notices','','icon-button','aria-label="消息通知"')}</div><div class="map-placeholder">${icon('map')}<h1>${state.mapScope==='mine'?(requester()?'本机构的爱心足迹':'我的爱心足迹'):'爱心地图'}</h1><p>地图接入准备中</p><small>目前按服务区域查看需求与已确认成果<br>不展示模拟定位或虚构地理分布</small></div><div class="map-tools">${btn('筛选','map-filter','','secondary')}${btn('手动选择位置','city','','secondary')}</div>${state.mapScope==='mine'?btn('返回共同地图','collective','','text-button'):''}</section><section class="map-sheet"><div class="between"><div><p class="eyebrow">每一份善意，都有迹可循</p><h2>${requester()?'一起点亮更多地方':'从一次力所能及的帮助开始'}</h2></div>${btn(state.collapsed?'展开':'收起','collapse','','text-button')}</div>${summary(data.summary)}${state.collapsed?'':`<div class="between"><h2>已点亮地区 <small>${cells.length} 个网格</small></h2>${btn('生成足迹卡','share','','text-button')}</div>${cells.length?`<div class="light-grid">${cells.map((c,i)=>btn(`${icon('heart')}<b>${esc(c.region)}</b><small>${c.count} 次帮扶 · ${c.volunteers} 位志愿者</small>`,'cell',String(i),'light-cell brightness-'+c.brightness)).join('')}</div>`:empty('这里的温暖，等你点亮','经核实的服务且有主要地点坐标，才会点亮一个地方。')}${data.summary.pendingLocation?`<p class="notice">${data.summary.pendingLocation} 条已核实记录待机构补充地点坐标。时长已计入账户。</p>`:''}<div class="between"><h2>${requester()?'当前待办':'可参与的爱心需求'}</h2><label class="check-row"><input id="show-needs" type="checkbox" ${state.showNeeds?'checked':''}>显示待帮助</label></div>${state.showNeeds?(actions.length?actions.slice(0,2).map(taskCard).join(''):empty('暂时没有合适需求','可调整地区筛选，或在服务大厅查看全部安排。')):''}${link(requester()?'发布帮扶需求':'前往服务大厅',requester()?'publish/help':'services','primary wide')}`}<p class="privacy-note">公共成果仅显示概略区域，不显示老人身份、门牌和电话。</p></section>`,'map');
+function tabs(items, active, action) {
+  return `<div class="tabs" role="tablist">${items.map(([id, title]) => btn(esc(title), action, id, active === id ? 'tab active' : 'tab', `role="tab" aria-selected="${active === id}"`)).join('')}</div>`;
 }
-function filters(extra=''){const f=state.filter;return `<form id="filter-form" class="filters"><div class="search-row">${field('q','搜索需求、机构或区域',f.q||'','search',false)}<button class="icon-button" aria-label="搜索">${icon('search')}</button></div><details class="filter-options"><summary>类型、日期与时长筛选</summary><div class="filter-grid">${select('category','服务类型',[['','全部类型'],...categories],f.category)}${field('date','预约日期',f.date||'','date',false)}${select('minutes','服务时长',[['','不限时长'],['30','30 分钟以内'],['60','60 分钟以内'],['90','90 分钟以内'],['180','3 小时以内']],f.minutes)}${extra}</div></details><div class="between"><small>路线待接入，暂按开始时间排序</small>${btn('重置','reset-filter','','text-button')}<button class="text-button">应用筛选</button></div></form>`;}
-async function servicesPage(){
-  const mine=requester()||state.tab==='mine';const query=new URLSearchParams({kind:'help',...state.filter,...(mine?{scope:'mine'}:{})});let tasks=await api('/tasks?'+query);state.list=tasks;
-  if(state.tab==='todo')tasks=tasks.filter(t=>t.newApplicants||t.hasPendingChange||t.applications.some(a=>['submitted','disputed'].includes(a.status)));
-  if(state.filter.status)tasks=tasks.filter(t=>matchesStatus(t,state.filter.status));
-  return shell(`<div class="page-intro"><p>${requester()?'把需要帮助的人，与愿意付出的人连接起来。':'寻找一次力所能及的帮助。'}</p>${requester()?link(icon('plus')+' 发布需求','publish/help','primary'):''}</div>${tabs(requester()?[['discover','已发布需求'],['todo','待办']]:[['discover','发现需求'],['mine','我参与的']],state.tab,'service-tab')}<section class="surface">${filters(mine?select('status','状态',[['','全部状态'],['draft','草稿'],['pending','待处理'],['active','进行中'],['completed','已完成'],['other','其他']],state.filter.status):'')}<div class="list">${tasks.length?tasks.map(taskCard).join(''):empty('暂无符合条件的服务','调整筛选条件，或稍后再来看一看。')}</div></section>`,'services','服务大厅');
+function header(title, back = false) {
+  return `<header class="page-head">${back ? btn(icon('back'), 'back', '', 'icon-button', 'aria-label="返回"') : ''}<h1>${esc(title)}</h1>${btn(icon('bell'), 'notices', '', 'icon-button', 'aria-label="消息通知"')}</header>`;
 }
-function matchesStatus(t,s){const a=t.application;if(s==='draft')return t.status==='draft';if(s==='pending')return a?['pending','submitted','disputed'].includes(a.status):t.status==='published'&&t.newApplicants>0;if(s==='active')return a?['accepted','checked_in'].includes(a.status):t.applications.some(a=>['accepted','checked_in','submitted'].includes(a.status));if(s==='completed')return a?a.status==='confirmed':t.applications.length>0&&t.applications.every(a=>['confirmed','rejected','withdrawn','cancelled','revoked'].includes(a.status));if(s==='other')return ['paused','cancelled'].includes(t.status)||['withdrawn','rejected','cancelled','revoked'].includes(a?.status);return true;}
-function recordBlock(r,org){if(!r)return '';return `<div class="record-block"><div class="between"><h3>服务核实记录</h3>${status(r.status)}</div><p>${dateTime(r.start)} — ${dateTime(r.end)}</p><p class="pre">${esc(r.content)}</p><p>提交 ${r.submitted} 分钟 · 已确认 ${r.confirmed} 分钟 · ${r.recipients||0} 受助人次</p>${r.note?`<p>人工说明：${esc(r.note)}</p>`:''}${r.reason?`<p>核实说明：${esc(r.reason)}</p>`:''}${r.dispute?`<p class="notice">异议：${esc(r.dispute)}</p>`:''}<div class="actions">${org?(r.status==='submitted'?btn('核实服务','confirm-record',r.id,'primary'):r.status==='disputed'?btn('处理异议','resolve-record',r.id,'primary'):btn('更正记录','correct-record',r.id))+(['confirmed','disputed'].includes(r.status)?btn('撤销无效记录','revoke-record',r.id,'text-button'):''):r.status!=='disputed'?btn('对结果有异议','dispute-record',r.id):''}${btn('查看变更记录','audit',r.id,'text-button')}</div></div>`;}
-function changeBlock(t,a){if(!t.pending)return '';const p=t.pending.proposed;return `<section class="card notice"><h3>服务安排变更待确认</h3><p>${esc(p.title)} · ${dateTime(p.start)} — ${dateTime(p.end)}</p><p>${esc(p.address)} · ${p.minutes} 分钟</p><p class="pre">${esc(p.description)}</p>${t.mine?`<p>${Object.values(t.pending.answers).filter(x=>x==='pending').length} 人尚未确认；全部处理后新安排生效。</p>`:a&&t.pending.answers[a.id]==='pending'?`<div class="actions">${btn('接受新安排','accept-change',a.id,'primary')}${btn('不同意并退出','decline-change',a.id)}</div>`:'<p>已记录你的选择，等待其他参与者确认。</p>'}</section>`;}
-async function taskPage(id){
-  const t=await api('/tasks/'+id);state.task=t;state.records=Object.fromEntries(t.applications.filter(a=>a.record).map(a=>[a.record.id,a.record]));if(t.application?.record)state.records[t.application.record.id]=t.application.record;
-  const a=t.application;let action='';
-  if(t.mine){action=`${t.status!=='cancelled'?link('编辑内容','publish/'+t.id)+btn(t.status==='published'?'暂停招募':'开放发布',t.status==='published'?'pause-task':'publish-task',id):''}${btn('复制为草稿','copy-task',id)}${t.status!=='cancelled'?btn('取消需求','cancel-task',id,'text-button'):''}${btn('补充／更正成果地点','location',id,'text-button')}`;}
-  else if(!requester()&&t.kind==='help'){action=(!a||['withdrawn','rejected'].includes(a.status))?btn(t.remaining?'报名参与':'名额已满','apply',id,'primary',t.remaining&&t.status==='published'?'':'disabled'):(['pending','accepted'].includes(a.status)?btn('退出报名','withdraw',a.id):'')+((['accepted','checked_in','disputed'].includes(a.status)||(a.status==='cancelled'&&a.wasAccepted))?(a.status==='accepted'?btn('到场签到','checkin',a.id,'primary'):'')+btn('提交服务记录','submit-record',a.id,'primary'):'');}
-  else if(!requester()&&t.kind==='redeem'){action=btn('申请兑换','book',id,'primary',t.status==='published'&&t.remaining?'':'disabled');}
-  return shell(`<section class="card task-hero"><div class="between"><span class="eyebrow">${t.kind==='help'?'助老帮扶':'时间兑换'}</span>${status(a?.status||t.displayStatus||t.status)}</div><h1>${esc(t.title||'未命名草稿')}</h1><p>${esc(t.orgName)} · ${esc(t.category)}</p><div class="chips"><span>${hours(t.minutes)} 小时</span><span>剩余 ${t.remaining} / ${t.capacity} 名额</span></div></section>${changeBlock(t,a)}<section class="card"><h2>服务安排</h2><dl><dt>预约时间</dt><dd>${dateTime(t.start)} — ${dateTime(t.end)}</dd><dt>报名截止</dt><dd>${dateTime(t.deadline)}</dd><dt>服务区域</dt><dd>${esc(t.region)}</dd><dt>详细地址</dt><dd>${esc(t.address||'确认参与后向相关人员展示')}</dd>${t.meeting?`<dt>集合说明</dt><dd>${esc(t.meeting)}</dd>`:''}${t.contact?`<dt>联系机构</dt><dd>${esc(t.contact)} · <a href="tel:${esc(t.phone)}">${esc(t.phone)}</a></dd>`:''}</dl><div class="actions">${btn('查看到达说明','route',id)}${btn('在爱心地图查看','view-map',id,'text-button')}</div></section><section class="card"><h2>需要做什么</h2><p class="pre">${esc(t.description||'暂无说明')}</p><h3>服务要求</h3><p class="pre">${esc(t.requirements||'愿意耐心陪伴，按约定时间参加。')}</p>${t.recipient?`<h3>受助对象</h3><p>${esc(t.recipient)} · 预计 ${t.recipients} 人次</p>`:''}${t.cancelReason?`<p class="notice">取消原因：${esc(t.cancelReason)}</p>`:''}</section>${t.mine&&t.kind==='help'?`<section class="card"><h2>报名与服务管理</h2>${t.applications.length?t.applications.map(x=>`<article class="participant"><div class="between"><h3>${esc(x.volunteer.name)}</h3>${status(x.status)}</div><p>${esc(x.volunteer.skills||'未填写擅长服务')}</p><p>${esc(x.message||'无报名留言')}</p>${x.reason?`<p>${esc(x.reason)}</p>`:''}${x.status==='pending'?`<div class="actions">${btn('确认参与','accept-app',x.id,'primary')}${btn('不通过','reject-app',x.id)}</div>`:''}${recordBlock(x.record,true)}</article>`).join(''):empty('暂时没有人报名','发布后可在这里确认参与人员。')}</section>`:''}${a?`<section class="card"><h2>我的参与</h2>${status(a.status)}${a.reason?`<p>${esc(a.reason)}</p>`:''}${recordBlock(a.record,false)}</section>`:''}${t.mine&&t.kind==='redeem'?`<section class="card"><h2>兑换预约</h2>${t.bookings.length?t.bookings.map(bookingCard).join(''):empty('暂无兑换预约')}</section>`:''}${t.mine||a&&(['accepted','checked_in','submitted','disputed','confirmed'].includes(a.status)||a.wasAccepted)?`<section class="card"><h2>与本次服务有关</h2><div class="actions">${btn('留言与评价','comments',id)}${btn('服务材料','files',id)}${t.mine?btn('需求变更记录','audit',id):''}</div></section>`:''}<div class="sticky-actions actions">${action||'<p>当前状态无待执行操作</p>'}</div>` ,t.kind==='redeem'?'bank':'services',t.kind==='redeem'?'兑换服务详情':'帮扶需求详情',true);
+function shell(content, tab = 'map', title = '', back = false) {
+  document.documentElement.classList.toggle('large-text', state.user?.settings?.fontSize === 'large');
+  return `<div class="app-shell">${state.config?.environment !== 'production' ? '<div class="dev-banner">开发环境 · 验证码为模拟发送 · 数据与生产隔离</div>' : ''}${title ? header(title, back) : ''}<main>${content}</main><nav class="bottom-nav" aria-label="主导航">${[
+    ['map', 'map', '爱心地图'],
+    ['services', 'grid', '服务大厅'],
+    ['bank', 'clock', '时间银行'],
+    ['profile', 'user', '我的'],
+  ]
+    .map(
+      ([id, i, label]) =>
+        `<a href="#${id}" class="${tab === id ? 'active' : ''}" ${tab === id ? 'aria-current="page"' : ''}>${icon(i)}<span>${label}</span></a>`,
+    )
+    .join('')}</nav></div>`;
 }
-async function publishPage(id){
-  if(!requester())throw new Error('仅需求方可以发布服务');const old=!['help','redeem'].includes(id)?await api('/tasks/'+id):null;state.editTask=old;const t=old||{kind:id||'help',region:state.user.region,contact:state.user.contact,phone:state.user.phone,capacity:1,minutes:60,recipients:1,start:new Date(Date.now()+86400000).toISOString(),end:new Date(Date.now()+90000000).toISOString()};
-  return shell(`<form id="publish-form" class="publish-form"><section class="card"><h2>${t.kind==='redeem'?'兑换服务':'帮扶需求'}信息</h2>${field('title','服务标题',t.title)}${select('category','服务类型',categories,t.category)}${field('description','具体服务内容',t.description,'textarea')}${field('recipient','受助对象／适用人群',t.recipient)}${field('requirements','能力要求与注意事项',t.requirements,'textarea',false)}</section><section class="card"><h2>服务地点</h2><p class="notice">地图选址待接入，请手动填写。准确坐标可稍后补充；未填坐标不会虚构地图成果。</p>${field('region','公开区域（不含门牌）',t.region)}${field('address','详细地址（仅相关人员可见）',t.address)}${field('meeting','集合和到达说明',t.meeting,'textarea',false)}<div class="two-col">${field('lat','纬度（可选）',t.lat,'number',false,'step="any" min="-85" max="85"')}${field('lng','经度（可选）',t.lng,'number',false,'step="any" min="-180" max="180"')}</div></section><section class="card"><h2>时间与名额</h2>${field('start','开始时间',localTime(t.start),'datetime-local')}${field('end','结束时间',localTime(t.end),'datetime-local')}${field('deadline','报名截止',localTime(t.deadline||t.start),'datetime-local')}<div class="two-col">${field('minutes',t.kind==='redeem'?'兑换占用分钟':'预计有效分钟',t.minutes,'number',true,'min="1" max="1440"')}${field('capacity',t.kind==='redeem'?'预约名额':'志愿者人数',t.capacity,'number',true,'min="1" max="200"')}</div>${field('recipients','预计受助人次',t.recipients,'number',true,'min="1" max="10000"')}</section><section class="card"><h2>联系人</h2>${field('contact','机构联系人',t.contact)}${field('phone','联系电话',t.phone,'tel')}<p class="notice">服务开始或完成后，通过记录核实与更正处理时长。已有确认人员的核心变更需逐一确认。</p><p class="form-error" role="alert"></p><div class="actions"><button class="primary" name="mode" value="published">${old?'保存修改':'发布服务'}</button>${!old||old.status==='draft'?'<button class="secondary" name="mode" value="draft" formnovalidate>保存草稿</button>':''}${btn('公开预览','preview-task')}</div></section></form>` ,t.kind==='redeem'?'bank':'services',old?'编辑服务':'发布服务',true);
+function modal(title, html, onSubmit, label = '确认') {
+  dialog.innerHTML = `<div class="modal-head"><h2 id="dialog-title">${esc(title)}</h2>${btn(icon('close'), 'close', '', 'icon-button', 'aria-label="关闭弹窗"')}</div>${onSubmit ? `<form id="modal-form">${html}<p class="form-error" role="alert"></p><button class="primary wide" type="submit">${esc(label)}</button></form>` : html}`;
+  modalSubmit = onSubmit;
+  if (!dialog.open) dialog.showModal();
 }
-
-async function bankPage(){
- const bank=await api('/bank');state.bank=bank;const btab=state.bankTab;const offers=await api('/tasks?'+new URLSearchParams({kind:'redeem',...state.filter,...(requester()?{scope:'mine'}:{})}));
- const totals=bank.accounts.reduce((s,a)=>({available:s.available+a.available,held:s.held+a.held,pending:s.pending+a.pending,used:s.used+a.used}),{available:0,held:0,pending:0,used:0});
- const hero=requester()?`<p>本机构累计确认发放</p><strong>${hours(bank.issued)} <small>小时</small></strong><div class="bank-mini"><span>待核实 ${hours(bank.pending)} 小时</span><span>待处理兑换 ${bank.bookings.filter(b=>['pending','disputed','reschedule'].includes(b.status)).length} 笔</span></div>`:`<p>可用时间权益</p><strong>${hours(totals.available)} <small>小时</small></strong><div class="bank-mini"><span>待确认 ${hours(totals.pending)} 小时</span><span>兑换占用 ${hours(totals.held)} 小时</span></div><small>按发放机构分别使用 · 服务与休息时间分开记录</small>`;
- const options=requester()?[['ledger','发放记录'],['offers','兑换服务'],['bookings','兑换预约']]:[['offers','可兑换服务'],['bookings','我的兑换'],['ledger','时间明细']];
- let content='';if(btab==='offers')content=`${requester()?link(icon('plus')+' 新增兑换服务','publish/redeem','primary wide'):''}${filters(select('org','服务机构',[['','全部机构'],...bank.accounts.map(a=>[a.orgId,a.orgName])],state.filter.org))}${offers.length?offers.map(taskCard).join(''):empty('暂无可兑换服务','机构发布兑换项目后，将在这里展示。')}`;
- if(btab==='bookings')content=`${select('booking-status','预约状态',[['','全部'],...['pending','accepted','reschedule','result_pending','disputed','completed','cancelled'].map(s=>[s,labels[s]])],state.bookingStatus)}${bank.bookings.filter(b=>!state.bookingStatus||b.status===state.bookingStatus).map(bookingCard).join('')||empty('暂无兑换记录','预约后可在这里跟进安排与履约结果。')}`;
- if(btab==='ledger')content=`${select('ledger-type','流水类型',[['','全部'],['credit','服务入账'],['redeem','兑换扣除'],['correction','时长更正'],['refund','兑换退回']],state.ledgerType)}${field('ledger-date','记录日期',state.ledgerDate||'','date',false)}${bank.ledger.filter(r=>(!state.ledgerType||r.kind===state.ledgerType)&&(!state.ledgerDate||new Date(r.created).toLocaleDateString('en-CA')===state.ledgerDate)).map(r=>`<a class="ledger-row" href="#task/${esc(r.task_id)}"><div><b>${esc(requester()?r.userName:r.orgName)}</b><p>${esc(r.note)}</p><small>${dateTime(r.created)}</small></div><strong class="${r.minutes>0?'credit':''}">${r.minutes>0?'+':''}${r.minutes}<small> 分钟</small></strong></a>`).join('')||empty('暂无时间流水','经核实的实际服务将生成时间记录。')}<p class="notice">占用与释放记录保留在对应兑换预约及其变更记录中。兑换不会减少历史志愿贡献。</p>`;
- return shell(`<section class="bank-hero">${icon('clock')}${hero}</section>${!requester()?`<details class="card accounts"><summary>查看各机构账户与累计贡献</summary>${bank.accounts.map(a=>`<article class="account"><b>${esc(a.orgName)}</b><div class="account-numbers"><span>可用 ${a.available} 分钟</span><span>占用 ${a.held} 分钟</span><span>待确认 ${a.pending} 分钟</span><span>累计贡献 ${a.contributed} 分钟</span><span>已使用 ${a.used} 分钟</span><span>异议冻结 ${a.disputed||0} 分钟</span></div>${a.debt?`<p class="notice">更正后待补足 ${a.debt} 分钟，暂不可新增兑换。</p>`:''}</article>`).join('')||'<p>参与服务后，查看对应机构的时间权益。</p>'}</details>`:''}${tabs(options,btab,'bank-tab')}<section class="surface">${content}</section>`,'bank','时间银行');
+function formData(form) {
+  return Object.fromEntries(new FormData(form));
 }
-async function bookingPage(id){
- const b=await api('/bookings/'+id);state.booking=b;const org=requester();let actions='';
- if(b.status==='pending'&&org)actions+=btn('接受预约','accept-booking',id,'primary');
- if(['pending','accepted'].includes(b.status))actions+=btn('申请改约','reschedule',id)+btn('取消预约','cancel-booking',id);
- if(b.status==='reschedule'&&b.change.by!==state.user.id)actions+=btn('接受改约','accept-reschedule',id,'primary')+btn('不同意改约','decline-reschedule',id);
- if(['accepted','disputed'].includes(b.status)&&org)actions+=btn('记录实际履约','booking-result',id,'primary');
- if(b.status==='accepted'&&org)actions+=btn('协商追加服务','extra',id);
- if(b.extra&&!org)actions+=btn('同意追加','accept-extra',id,'primary')+btn('拒绝追加','decline-extra',id);
- if(b.status==='result_pending'&&!org)actions+=btn('确认实际结果','complete-booking',id,'primary')+btn('提出异议','dispute-booking',id);
- if(b.status==='completed'&&!b.correction)actions+=btn('申请更正扣除','booking-correction',id);
- if(b.correction&&b.correction.by!==state.user.id)actions+=btn('接受更正','accept-correction',id,'primary')+btn('拒绝更正','decline-correction',id);
- if(b.task.pending?.answers[id]==='pending'&&!org)actions+=btn('同意项目变更','accept-booking-change',id,'primary')+btn('不同意并取消','decline-booking-change',id);
- return shell(`<section class="card"><div class="between"><span class="eyebrow">兑换预约</span>${status(b.status)}</div><h1>${esc(b.title)}</h1><p>${esc(b.orgName)} · 申请人 ${esc(b.applicant)}</p><h2>${dateTime(b.start)} — ${dateTime(b.end)}</h2><p>${esc(b.address)}</p><p>受助对象：${esc(b.recipient)} · <a href="tel:${esc(b.phone)}">${esc(b.phone)}</a></p><p class="pre">${esc(b.needs||'暂无特殊需要')}</p><p>占用 ${b.held} 分钟 · 实际扣除 ${b.charged} 分钟</p>${link('查看项目内容','task/'+b.taskId,'text-button')}</section>${b.task.pending?changeBlock(b.task):''}${b.change?`<section class="card notice"><h3>改约等待另一方确认</h3><p>${dateTime(b.change.start)} — ${dateTime(b.change.end)}</p><p>${esc(b.change.reason)}</p></section>`:''}${b.extra?`<section class="card notice"><h3>追加 ${b.extra.minutes} 分钟待确认</h3><p>${esc(b.extra.reason)}</p></section>`:''}${b.result?`<section class="card"><h2>实际履约结果</h2><p>${esc(b.result.content)}</p><p>实际 ${b.result.minutes} 分钟 · ${b.result.recipients} 受助人次</p><p class="muted">申请人确认后结算实际时长，剩余占用自动释放。</p></section>`:''}${b.dispute||b.reason?`<section class="card notice">${esc(b.dispute||b.reason)}</section>`:''}${b.correction?`<section class="card notice"><h3>扣除更正为 ${b.correction.minutes} 分钟</h3><p>${esc(b.correction.reason)}</p></section>`:''}<section class="card"><div class="actions">${btn('留言与评价','comments',id)}${btn('服务材料','files',id)}${btn('变更记录','audit',id)}</div></section><div class="sticky-actions actions">${actions||'<p>暂无待执行操作，可通过留言联系对方。</p>'}</div>`,'bank','兑换预约详情',true);
+function errorIn(form, error) {
+  const node = form.querySelector('.form-error');
+  if (node) node.textContent = error.message;
+  else toast(error.message);
 }
-async function profilePage(){const map=await api('/map?scope=mine');return shell(`<section class="profile-hero"><div class="avatar">${icon(requester()?'grid':'user')}</div><div><p class="eyebrow">${requester()?'需求方 · 让善意在这里相遇':'志愿者 · 让时间成为礼物'}</p><h1>${esc(state.user.name)}</h1><p>${esc(state.user.region)}</p></div>${btn('编辑','edit-profile','','text-button')}</section><section class="card">${summary(map.summary)}</section><section class="card menu-list">${btn(`${icon('map')} ${requester()?'本机构成果':'我的爱心足迹'} ${icon('arrow')}`,'footprints','','menu-item')}${btn(`${icon('grid')} ${requester()?'服务管理与历史记录':'我参与的服务'} ${icon('arrow')}`,'history','','menu-item')}${btn(`${icon('clock')} 兑换记录 ${icon('arrow')}`,'my-bookings','','menu-item')}${btn(`${icon('bell')} 消息通知 ${icon('arrow')}`,'notices','','menu-item')}${btn(`${icon('user')} 账户与显示设置 ${icon('arrow')}`,'settings','','menu-item')}${btn('使用说明与隐私约定','terms','','menu-item')}${btn('意见反馈','feedback','','menu-item')}</section>${btn('退出登录','logout','','secondary wide')}<p class="privacy-note">时光有路 · 帮助一个人，点亮一个地方</p>`,'profile','我的');}
-
-async function render(){
- const token=++renderToken;const route=current();dirty=false;
- if(!state.user){root.innerHTML=login();return;}if(!state.user.profileComplete){root.innerHTML=completeProfile();return;}
- root.setAttribute('aria-busy','true');try{let html;const [page,id]=route.split('/');if(page==='map'||page==='login')html=await mapPage();else if(page==='services')html=await servicesPage();else if(page==='bank')html=await bankPage();else if(page==='profile')html=await profilePage();else if(page==='task')html=await taskPage(id);else if(page==='booking')html=await bookingPage(id);else if(page==='publish')html=await publishPage(id||'help');else throw new Error('页面不存在');if(token!==renderToken)return;root.innerHTML=html;document.title=`时光有路 · ${root.querySelector('h1')?.textContent||'爱心地图'}`;}catch(e){if(token===renderToken)root.innerHTML=shell(`<section class="card">${empty('暂时无法打开',e.message)}${btn('重新加载','refresh','','primary')}${link('返回爱心地图','map')}</section>`,'map','稍后重试',true);}finally{root.removeAttribute('aria-busy');}
+async function mutate(path, body, method = 'POST') {
+  const result = await api(path, method, body);
+  dialog.close();
+  toast('已保存');
+  await render();
+  return result;
 }
-
-async function onAction(action,id,button){
- if(action==='close'){dialog.close();return;}if(action==='back'){history.length>1?history.back():go('map');return;}if(action==='refresh')return render();
- if(action==='code'){const form=document.querySelector('#login-form'),phone=form.elements.phone.value;if(!/^1\d{10}$/.test(phone))throw new Error('请输入 11 位有效手机号');const result=await api('/auth/code','POST',{phone});document.querySelector('#code-info').textContent=result.developmentCode?'开发模拟验证码：'+result.developmentCode:'验证码已发送，请查看短信';return;}
- if(action==='terms')return modal('使用说明与隐私约定',`<p>时光有路连接社区助老需求与志愿者。当前仅有需求方和志愿者两个身份。</p><p>手机号用于登录。个人资料、联系信息和服务材料仅供相关参与者处理本次服务。公共成果只展示概略区域与匿名统计。</p><p>时间权益来自机构核实的实际服务，不是现金，按发放机构分别兑换。未提供的兑换服务取消后释放占用，争议由双方通过关联记录沟通并核实。</p><p>请取得受助者同意，避免上传不必要的身份、医疗或其他敏感材料。可通过任务留言申请资料更正，个人资料可在“我的”维护。</p><p>地图、短信、文件存储的真实接入以当前环境说明为准。</p>`);
- if(action==='logout')return modal('退出当前账户','<p>服务记录和时间账户会保存在数据库中。确认退出？</p>',async()=>{await api('/auth/logout','POST',{});dialog.close();state.user=null;state.csrf=null;state.filter={};go('login');await render();},'退出登录');
- if(action==='service-tab'){state.tab=id;state.filter={};return render();}if(action==='bank-tab'){state.bankTab=id;state.filter={};return render();}if(action==='reset-filter'){state.filter={};return render();}
- if(action==='footprints'){state.mapScope='mine';state.city='';if(current()==='map')return render();go('map');return;}if(action==='collective'){state.mapScope='all';return render();}if(action==='history'){state.tab=requester()?'discover':'mine';state.filter={};go('services');return;}if(action==='my-bookings'){state.bankTab='bookings';go('bank');return;}
- if(action==='collapse'){state.collapsed=!state.collapsed;return render();}
- if(action==='city')return modal('选择服务区域',field('city','城市或区县（留空查看全部）',state.city,'text',false)+'<p class="notice">目前手动选择区域，未调用实时定位。</p>',async b=>{state.city=b.city;dialog.close();await render();},'查看这个区域');
- if(action==='map-filter')return modal('发现合适的帮助',field('q','区域或关键词',state.city,'text',false)+select('category','服务类型',[['','全部'],...categories])+field('date','日期','','date',false)+select('minutes','服务时长',[['','不限'],['30','30 分钟'],['60','60 分钟'],['90','90 分钟']])+'<p class="notice">距离、预计到达时间和含往返的空闲时间推荐，需地图路线接入后启用。</p>',async b=>{state.filter=b;state.tab='discover';dialog.close();go('services');});
- if(action==='cell'){const c=state.cells[Number(id)];return modal('这个地方的爱心记忆',`<h3>${esc(c.region)}</h3><p>${c.count} 次有效帮扶 · ${c.volunteers} 位共同参与的志愿者</p><p>${esc(c.categories.join('、'))}</p><p>最近更新 ${dateTime(c.latest)}</p><p class="muted">已点亮不代表这里的所有需求都已解决。</p>${btn('继续帮助这里','help-cell',id,'primary wide')}`);}
- if(action==='help-cell'){state.filter={q:state.cells[Number(id)].region};state.tab='discover';dialog.close();go('services');return;}
- if(action==='view-map'){state.city=state.task.region;state.mapScope='all';go('map');return;}
- if(action==='route')return modal('到达与联系说明',`<p class="notice">百度地图路线待接入，暂不能提供真实距离和预计耗时。</p><p>${esc(state.task.address||state.task.region)}</p><p>${esc(state.task.meeting||'请与机构确认集合安排。')}</p>${state.task.phone?`<a class="primary wide" href="tel:${esc(state.task.phone)}">联系 ${esc(state.task.contact)}</a>`:''}${btn('复制文字地址','copy-address','','secondary wide')}`);
- if(action==='copy-address'){await navigator.clipboard.writeText(state.task.address||state.task.region);toast('地址已复制');return;}
- if(action==='edit-profile')return modal('维护资料',profileFields(),async b=>{state.user=await api('/profile','PUT',b);dialog.close();await render();});
- if(action==='settings')return modal('账户与显示设置',`<p>${esc(state.user.phone)} · ${requester()?'需求方':'志愿者'}</p>${select('fontSize','文字大小',[['normal','标准'],['large','大字']],state.user.settings?.fontSize||'normal')}<label class="check-row"><input name="notifications" type="checkbox" ${state.user.settings?.notifications!==false?'checked':''}>开启服务提醒</label><p>业务状态通知仍会保留在消息中心，便于追溯。</p>`,async b=>{state.user=await api('/profile','PUT',{...state.user,settings:{fontSize:b.fontSize,notifications:b.notifications==='on'}});dialog.close();await render();});
- if(action==='feedback'){const list=await api('/feedback');return modal('意见反馈',field('content','你的建议或遇到的问题','','textarea')+`<details><summary>已提交反馈（${list.length}）</summary>${list.map(f=>`<p>${dateTime(f.created)} · 已收到<br>${esc(f.content)}</p>`).join('')}</details>`,b=>mutate('/feedback',b),'提交反馈');}
- if(action==='notices'){const list=await api('/notices');return modal('消息通知',`${btn('全部标为已读','read-all','','text-button')}${list.map(n=>`<button class="notice-item ${n.read?'read':''}" data-action="notice" data-id="${esc(n.id)}" data-target="${esc(n.target)}"><b>${esc(n.title)}</b><small>${dateTime(n.created)}</small></button>`).join('')||empty('暂无消息')}`);}
- if(action==='notice'){await api('/notices/'+encodeURIComponent(id),'POST',{});dialog.close();if(current()===button.dataset.target)await render();else go(button.dataset.target);return;}if(action==='read-all'){await api('/notices/read','PUT',{});return onAction('notices');}
- if(action==='audit'){const list=await api('/audit/'+id);return modal('变更与核实记录',list.map(a=>`<article class="record-block"><b>${esc(({create:'创建',edit:'编辑',cancel:'取消',confirm:'核实',correct:'更正',resolve:'异议处理',revoke:'撤销',location:'更正地点','booking-correction':'兑换更正'})[a.action]||a.action)}</b><p>${esc(a.reason||'记录已保存')}</p><small>${dateTime(a.created)}</small>${a.before?.confirmed!==undefined?`<p>确认时长 ${a.before.confirmed} → ${a.after.confirmed} 分钟</p>`:''}</article>`).join('')||empty('暂无变更记录'));}
- if(action==='comments'){const list=await api('/comments/'+id);return modal('任务留言与评价',`<div class="comments">${list.map(c=>`<article><b>${esc(c.name)} · ${c.type==='review'?'评价':'留言'}</b><p class="pre">${esc(c.content)}</p><small>${dateTime(c.created)}</small></article>`).join('')||'<p>还没有留言，可在这里沟通本次安排。</p>'}</div>${select('type','内容类型',[['message','留言'],['review','服务评价']])}${field('content','内容','','textarea')}`,b=>mutate('/comments/'+id,b),'发送');}
- if(action==='files'){const files=await api('/files/'+id);return modal('本次服务材料',`${files.map(f=>`<p><a href="/api/attachments/${esc(f.id)}" download>${esc(f.name)}</a> · ${dateTime(f.created)}</p>`).join('')||'<p>暂无附件</p>'}${state.config.adapters.upload==='local'?`<p class="notice">开发环境附件存放本地，未接入 COS。仅相关参与者可访问。请勿上传不必要的敏感资料。</p>${field('file','选择图片或 PDF（最大 3MB）','','file',true,'accept="image/png,image/jpeg,image/webp,application/pdf"')}`:'<p class="notice">COS 尚未配置，暂不开放附件上传。仍可通过服务文字记录完成核实。</p>'}`,state.config.adapters.upload==='local'?async(b,form)=>{const file=form.elements.file.files[0];if(file.size>3000000)throw new Error('附件不能超过 3MB');const base64=await new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result.split(',')[1]);r.onerror=reject;r.readAsDataURL(file);});await mutate('/attachments',{ref:id,name:file.name,type:file.type,base64});}:null,'上传材料');}
- if(action==='preview-task'){const b=formData(document.querySelector('#publish-form'));return modal('公开预览',`<h3>${esc(b.title||'未命名草稿')}</h3><p>${esc(state.user.name)} · ${esc(b.region)}</p><p>${dateTime(b.start)} — ${dateTime(b.end)}</p><p class="pre">${esc(b.description)}</p><p>${esc(b.minutes)} 分钟 · ${esc(b.capacity)} 名额</p><p class="notice">详细门牌、受助者信息和联系人电话仅向确认参与者展示。</p>`);}
- if(action==='apply')return modal('报名参与',`<p>报名后等待机构确认。通过后可查看集合地址。</p>${field('message','给机构的留言','','textarea',false)}`,b=>mutate('/tasks/'+id+'/apply',b),'提交报名');
- const simpleApps={'accept-app':'accept','checkin':'checkin','accept-change':'change','decline-change':'change'};
- if(simpleApps[action])return mutate('/applications/'+id,{action:simpleApps[action],...(action.endsWith('change')?{answer:action==='accept-change'?'accept':'decline'}:{})});
- if(action==='reject-app'||action==='withdraw')return reason(action==='withdraw'?'退出报名':'不通过报名','/applications/'+id,action==='withdraw'?'withdraw':'reject');
- if(['pause-task','publish-task','copy-task'].includes(action)){const result=await mutate('/tasks/'+id+'/action',{action:{'pause-task':'pause','publish-task':'publish','copy-task':'copy'}[action]});if(action==='copy-task')go('publish/'+result.id);return;}
- if(action==='cancel-task')return reason('取消这项需求','/tasks/'+id+'/action','cancel');
- if(action==='location')return modal('核实主要成果地点',`<p class="notice">只修正统计地点，不修改已约定的私人地址，不增加时长。已有成果会按新地点重新计算。</p>${field('lat','纬度',state.task.lat,'number',true,'step="any" min="-85" max="85"')}${field('lng','经度',state.task.lng,'number',true,'step="any" min="-180" max="180"')}${field('reason','核实依据','','textarea')}`,b=>mutate('/tasks/'+id+'/action',{action:'location',...b}));
- if(action==='submit-record'){const t=state.task,a=t.application;return modal('提交实际服务记录',`${field('start','实际开始',localTime(a.record?.start||t.start),'datetime-local')}${field('end','实际结束',localTime(a.record?.end||new Date(Math.min(Date.now(),Date.parse(t.end)))),'datetime-local')}${field('rest','休息分钟',a.record?.rest||0,'number',true,'min="0" max="1440"')}${field('content','实际完成的服务',a.record?.content,'textarea')}${field('note','未签到／补录／异常说明',a.record?.note,'textarea',!a.checkin)}<p>有效时长按起止时间减去休息计算；由机构核实后入账。</p>`,b=>mutate('/applications/'+id,{action:'submit',...b}),'提交核实');}
- if(['confirm-record','resolve-record','correct-record'].includes(action)){const r=state.records[id];return modal('核实实际服务',`<p>提交 ${r.submitted} 分钟 · ${esc(r.content)}</p>${field('minutes','确认有效分钟',r.status==='submitted'?r.submitted:r.confirmed,'number',true,`min="0" max="${r.submitted}"`)}${field('recipients','实际受助人次',r.recipients||1,'number',true,'min="0" max="10000"')}${field('reason','核实／更正说明',r.reason,'textarea',action!=='confirm-record')}<p>时长少于提交值时必须填写说明。更正会同步时间账户和地图。</p>`,b=>mutate('/records/'+id,{action:{'confirm-record':'confirm','resolve-record':'resolve','correct-record':'correct'}[action],...b}));}
- if(action==='revoke-record')return reason('撤销无效服务记录','/records/'+id,'revoke',{recipients:0});if(action==='dispute-record')return reason('对服务结果提出异议','/records/'+id,'dispute');
- if(action==='book')return modal('申请时间兑换',`<p>将占用 ${state.task.minutes} 分钟对应机构的时间权益，待双方确认履约后扣除。</p>${field('recipient','受助对象（本人或家中老人）')}${field('phone','联系电话',state.user.phone,'tel')}${field('needs','需要协助的事项','','textarea',false)}<label class="check-row"><input name="consent" type="checkbox" required>我已获得受助者同意并核对服务安排</label>`,b=>mutate('/tasks/'+id+'/book',{...b,consent:b.consent==='on'}),'确认申请');
- const bookingActions={'accept-booking':['accept'],'accept-reschedule':['respond','accept'],'decline-reschedule':['respond','decline'],'accept-extra':['extra-response','accept'],'decline-extra':['extra-response','decline'],'accept-correction':['correction-response','accept'],'decline-correction':['correction-response','decline'],'accept-booking-change':['task-change','accept'],'decline-booking-change':['task-change','decline']};
- if(bookingActions[action]){const [a,answer]=bookingActions[action];return mutate('/bookings/'+id,{action:a,...(answer?{answer}:{})});}
- if(action==='cancel-booking')return reason('取消兑换预约','/bookings/'+id,'cancel');if(action==='dispute-booking')return reason('对兑换结果提出异议','/bookings/'+id,'dispute');
- if(action==='reschedule'){const b=state.booking;return modal('申请调整预约时间',field('start','新的开始时间',localTime(b.start),'datetime-local')+field('end','新的结束时间',localTime(b.end),'datetime-local')+field('reason','改约原因','','textarea'),b=>mutate('/bookings/'+id,{...b,action:'reschedule'}));}
- if(action==='booking-result')return modal('记录实际履约结果',field('minutes','实际服务分钟',state.booking.held,'number',true,`min="0" max="${state.booking.held}"`)+field('recipients','受助人次',1,'number',true,'min="0"')+field('content','实际完成内容／未完成原因','','textarea'),b=>mutate('/bookings/'+id,{...b,action:'result'}),'提交申请人确认');
- if(action==='extra')return modal('协商追加服务',field('minutes','追加分钟数',15,'number',true,'min="1" max="1440"')+field('reason','追加说明','','textarea'),b=>mutate('/bookings/'+id,{...b,action:'extra'}));
- if(action==='complete-booking')return modal('确认兑换结果',`<p>${esc(state.booking.result.content)}</p><p>确认实际服务 ${state.booking.result.minutes} 分钟，结算后释放其余占用。</p>`,()=>mutate('/bookings/'+id,{action:'complete'}),'确认完成并结算');
- if(action==='booking-correction')return modal('申请更正实际扣除',field('minutes','更正后扣除分钟',state.booking.charged,'number',true,`min="0" max="${state.booking.charged}"`)+field('reason','更正原因','','textarea')+'<p>对方同意后，差额退回对应机构账户，并重新计算兑换成果。</p>',b=>mutate('/bookings/'+id,{...b,action:'correction'}));
- if(action==='share')return shareCard();
+const reason = (title, path, action, extra = {}) =>
+  modal(title, field('reason', '请填写原因', '', 'textarea'), (b) =>
+    mutate(path, { ...extra, ...b, action }),
+  );
+function summary(s) {
+  return `<div class="stats">${btn(`<strong>${s.places}</strong><span>已点亮地点</span>`, 'footprints', '', 'stat')}${btn(`<strong>${s.services}</strong><span>完成服务</span>`, 'history', '', 'stat')}${link(`<strong>${hours(s.minutes)}</strong><span>贡献小时</span>`, 'bank', 'stat')}</div>`;
+}
+function login() {
+  return `<main class="login-page"><div class="login-symbol">${icon('heart')}</div><p class="eyebrow">TIMEWAY · 时光有路</p><h1>让每一份善意<br>都有路可循。</h1><p class="muted">参与一次陪伴，留下一个温暖的足迹。</p><form id="login-form" class="card"><h2>欢迎加入时光有路</h2>${field('phone', '手机号码', '', 'tel', true, 'inputmode="tel" autocomplete="tel" pattern="1[0-9]{10}" maxlength="11"')}<div class="code-row">${field('code', '验证码', '', 'text', true, 'inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6"')}${btn('获取验证码', 'code', '', 'secondary')}</div><p id="code-info" class="notice"></p><label class="check-row"><input name="agreed" type="checkbox" required>我已阅读并同意 ${btn('使用说明与隐私约定', 'terms', '', 'text-button')}</label><p class="form-error" role="alert"></p><button type="submit" name="role" value="volunteer" class="primary wide">我是志愿者 ${icon('arrow')}</button><button type="submit" name="role" value="requester" class="secondary wide">我是需求方（社区／机构）</button><small>首次登录将注册所选身份；同一手机号对应一个角色。</small></form>${state.config?.environment !== 'production' ? '<p class="dev-banner">当前为开发环境，获取验证码后会在页面显示模拟验证码。不会发送真实短信。</p>' : ''}</main>`;
+}
+function profileFields() {
+  const u = state.user;
+  return `${field('name', requester() ? '机构名称' : '姓名', u.name)}${field('region', '常用服务区域', u.region)}${requester() ? field('contact', '机构联系人', u.contact) + field('address', '机构地址', u.address) : field('skills', '擅长服务', u.skills, 'textarea', false)}<p class="muted">手机号：${esc(u.phone)} · 身份：${requester() ? '需求方' : '志愿者'}</p>`;
+}
+function completeProfile() {
+  return `<main class="setup-page"><h1>完善${requester() ? '机构' : '个人'}资料</h1><p>让${requester() ? '志愿者认识你的机构' : '社区了解你的服务意愿'}。</p><form id="profile-form" class="card">${profileFields()}<p class="form-error" role="alert"></p><button class="primary wide">保存并进入</button></form></main>`;
 }
 
-async function shareCard(){const data=await api('/map?scope=mine'),s=data.summary;if(!s.services){toast('有已核实的服务记录后，即可生成足迹卡');return;}const canvas=document.createElement('canvas');canvas.width=720;canvas.height=900;const c=canvas.getContext('2d');c.fillStyle='#fff6ee';c.fillRect(0,0,720,900);c.fillStyle='#ef715f';c.font='bold 34px sans-serif';c.fillText('时光有路 · 我的爱心足迹',55,85);c.fillStyle='#253644';c.font='bold 44px sans-serif';c.fillText('每一份善意，都有迹可循',55,180);c.font='28px sans-serif';c.fillText(`点亮 ${s.places} 个地点`,55,280);c.fillText(`完成 ${s.services} 次服务`,55,340);c.fillText(`累计贡献 ${hours(s.minutes)} 小时`,55,400);c.font='22px sans-serif';c.fillStyle='#658273';[...new Set(data.cells.map(c=>c.region))].slice(0,6).forEach((region,i)=>c.fillText('♡ '+region,55,490+i*45,610));c.fillStyle='#71808d';c.fillText('根据已核实记录生成 · 区域文字摘要',55,820);if(state.config.environment!=='production')c.fillText('开发环境记录 · 非生产公益成果',55,860);const url=canvas.toDataURL('image/png');modal('预览爱心足迹卡',`<img class="share-preview" src="${url}" alt="本人的匿名爱心成果卡"><a class="primary wide" href="${url}" download="时光有路-爱心足迹.png">保存图片后分享</a><p class="privacy-note">未接入地图底图，以区域文字摘要呈现；不包含身份、门牌或联系方式。</p>`);}
+async function mapPage() {
+  const [data, tasks, ownTasks] = await Promise.all([
+    api('/map?scope=' + state.mapScope),
+    api('/tasks?kind=help' + (requester() ? '&scope=mine' : '')),
+    requester() ? Promise.resolve([]) : api('/tasks?kind=help&scope=mine'),
+  ]);
+  state.mapData = data;
+  const shown = tasks.filter((t) => !state.city || t.region.includes(state.city));
+  const cells = data.cells.filter((c) => !state.city || c.region.includes(state.city));
+  state.cells = cells;
+  const actions = requester()
+    ? shown.filter(
+        (t) => t.newApplicants || t.applications.some((a) => ['submitted', 'disputed'].includes(a.status)),
+      )
+    : [
+        ...new Map(
+          [
+            ...ownTasks.filter((t) =>
+              ['accepted', 'checked_in', 'submitted', 'disputed'].includes(t.application?.status),
+            ),
+            ...shown,
+          ].map((t) => [t.id, t]),
+        ).values(),
+      ];
+  return shell(
+    `<section class="map-stage"><div class="map-top">${btn(`${esc(state.city || '全部地区')}⌄`, 'city', '', 'city-button')}${btn(icon('bell'), 'notices', '', 'icon-button', 'aria-label="消息通知"')}</div><div class="map-placeholder">${icon('map')}<h1>${state.mapScope === 'mine' ? (requester() ? '本机构的爱心足迹' : '我的爱心足迹') : '爱心地图'}</h1><p>地图接入准备中</p><small>目前按服务区域查看需求与已确认成果<br>不展示模拟定位或虚构地理分布</small></div><div class="map-tools">${btn('筛选', 'map-filter', '', 'secondary')}${btn('手动选择位置', 'city', '', 'secondary')}</div>${state.mapScope === 'mine' ? btn('返回共同地图', 'collective', '', 'text-button') : ''}</section><section class="map-sheet"><div class="between"><div><p class="eyebrow">每一份善意，都有迹可循</p><h2>${requester() ? '一起点亮更多地方' : '从一次力所能及的帮助开始'}</h2></div>${btn(state.collapsed ? '展开' : '收起', 'collapse', '', 'text-button')}</div>${summary(data.summary)}${state.collapsed ? '' : `<div class="between"><h2>已点亮地区 <small>${cells.length} 个网格</small></h2>${btn('生成足迹卡', 'share', '', 'text-button')}</div>${cells.length ? `<div class="light-grid">${cells.map((c, i) => btn(`${icon('heart')}<b>${esc(c.region)}</b><small>${c.count} 次帮扶 · ${c.volunteers} 位志愿者</small>`, 'cell', String(i), 'light-cell brightness-' + c.brightness)).join('')}</div>` : empty('这里的温暖，等你点亮', '经核实的服务且有主要地点坐标，才会点亮一个地方。')}${data.summary.pendingLocation ? `<p class="notice">${data.summary.pendingLocation} 条已核实记录待机构补充地点坐标。时长已计入账户。</p>` : ''}<div class="between"><h2>${requester() ? '当前待办' : '可参与的爱心需求'}</h2><label class="check-row"><input id="show-needs" type="checkbox" ${state.showNeeds ? 'checked' : ''}>显示待帮助</label></div>${state.showNeeds ? (actions.length ? actions.slice(0, 2).map(taskCard).join('') : empty('暂时没有合适需求', '可调整地区筛选，或在服务大厅查看全部安排。')) : ''}${link(requester() ? '发布帮扶需求' : '前往服务大厅', requester() ? 'publish/help' : 'services', 'primary wide')}`}<p class="privacy-note">公共成果仅显示概略区域，不显示老人身份、门牌和电话。</p></section>`,
+    'map',
+  );
+}
+function filters(extra = '') {
+  const f = state.filter;
+  return `<form id="filter-form" class="filters"><div class="search-row">${field('q', '搜索需求、机构或区域', f.q || '', 'search', false)}<button class="icon-button" aria-label="搜索">${icon('search')}</button></div><details class="filter-options"><summary>类型、日期与时长筛选</summary><div class="filter-grid">${select('category', '服务类型', [['', '全部类型'], ...categories], f.category)}${field('date', '预约日期', f.date || '', 'date', false)}${select(
+    'minutes',
+    '服务时长',
+    [
+      ['', '不限时长'],
+      ['30', '30 分钟以内'],
+      ['60', '60 分钟以内'],
+      ['90', '90 分钟以内'],
+      ['180', '3 小时以内'],
+    ],
+    f.minutes,
+  )}${extra}</div></details><div class="between"><small>路线待接入，暂按开始时间排序</small>${btn('重置', 'reset-filter', '', 'text-button')}<button class="text-button">应用筛选</button></div></form>`;
+}
+async function servicesPage() {
+  const mine = requester() || state.tab === 'mine';
+  const query = new URLSearchParams({ kind: 'help', ...state.filter, ...(mine ? { scope: 'mine' } : {}) });
+  let tasks = await api('/tasks?' + query);
+  state.list = tasks;
+  if (state.tab === 'todo')
+    tasks = tasks.filter(
+      (t) =>
+        t.newApplicants ||
+        t.hasPendingChange ||
+        t.applications.some((a) => ['submitted', 'disputed'].includes(a.status)),
+    );
+  if (state.filter.status) tasks = tasks.filter((t) => matchesStatus(t, state.filter.status));
+  return shell(
+    `<div class="page-intro"><p>${requester() ? '把需要帮助的人，与愿意付出的人连接起来。' : '寻找一次力所能及的帮助。'}</p>${requester() ? link(icon('plus') + ' 发布需求', 'publish/help', 'primary') : ''}</div>${tabs(
+      requester()
+        ? [
+            ['discover', '已发布需求'],
+            ['todo', '待办'],
+          ]
+        : [
+            ['discover', '发现需求'],
+            ['mine', '我参与的'],
+          ],
+      state.tab,
+      'service-tab',
+    )}<section class="surface">${filters(
+      mine
+        ? select(
+            'status',
+            '状态',
+            [
+              ['', '全部状态'],
+              ['draft', '草稿'],
+              ['pending', '待处理'],
+              ['active', '进行中'],
+              ['completed', '已完成'],
+              ['other', '其他'],
+            ],
+            state.filter.status,
+          )
+        : '',
+    )}<div class="list">${tasks.length ? tasks.map(taskCard).join('') : empty('暂无符合条件的服务', '调整筛选条件，或稍后再来看一看。')}</div></section>`,
+    'services',
+    '服务大厅',
+  );
+}
+function matchesStatus(t, s) {
+  const a = t.application;
+  if (s === 'draft') return t.status === 'draft';
+  if (s === 'pending')
+    return a
+      ? ['pending', 'submitted', 'disputed'].includes(a.status)
+      : t.status === 'published' && t.newApplicants > 0;
+  if (s === 'active')
+    return a
+      ? ['accepted', 'checked_in'].includes(a.status)
+      : t.applications.some((a) => ['accepted', 'checked_in', 'submitted'].includes(a.status));
+  if (s === 'completed')
+    return a
+      ? a.status === 'confirmed'
+      : t.applications.length > 0 &&
+          t.applications.every((a) =>
+            ['confirmed', 'rejected', 'withdrawn', 'cancelled', 'revoked'].includes(a.status),
+          );
+  if (s === 'other')
+    return (
+      ['paused', 'cancelled'].includes(t.status) ||
+      ['withdrawn', 'rejected', 'cancelled', 'revoked'].includes(a?.status)
+    );
+  return true;
+}
+function recordBlock(r, org) {
+  if (!r) return '';
+  return `<div class="record-block"><div class="between"><h3>服务核实记录</h3>${status(r.status)}</div><p>${dateTime(r.start)} — ${dateTime(r.end)}</p><p class="pre">${esc(r.content)}</p><p>提交 ${r.submitted} 分钟 · 已确认 ${r.confirmed} 分钟 · ${r.recipients || 0} 受助人次</p>${r.note ? `<p>人工说明：${esc(r.note)}</p>` : ''}${r.reason ? `<p>核实说明：${esc(r.reason)}</p>` : ''}${r.dispute ? `<p class="notice">异议：${esc(r.dispute)}</p>` : ''}<div class="actions">${org ? (r.status === 'submitted' ? btn('核实服务', 'confirm-record', r.id, 'primary') : r.status === 'disputed' ? btn('处理异议', 'resolve-record', r.id, 'primary') : btn('更正记录', 'correct-record', r.id)) + (['confirmed', 'disputed'].includes(r.status) ? btn('撤销无效记录', 'revoke-record', r.id, 'text-button') : '') : r.status !== 'disputed' ? btn('对结果有异议', 'dispute-record', r.id) : ''}${btn('查看变更记录', 'audit', r.id, 'text-button')}</div></div>`;
+}
+function changeBlock(t, a) {
+  if (!t.pending) return '';
+  const p = t.pending.proposed;
+  return `<section class="card notice"><h3>服务安排变更待确认</h3><p>${esc(p.title)} · ${dateTime(p.start)} — ${dateTime(p.end)}</p><p>${esc(p.address)} · ${p.minutes} 分钟</p><p class="pre">${esc(p.description)}</p>${t.mine ? `<p>${Object.values(t.pending.answers).filter((x) => x === 'pending').length} 人尚未确认；全部处理后新安排生效。</p>` : a && t.pending.answers[a.id] === 'pending' ? `<div class="actions">${btn('接受新安排', 'accept-change', a.id, 'primary')}${btn('不同意并退出', 'decline-change', a.id)}</div>` : '<p>已记录你的选择，等待其他参与者确认。</p>'}</section>`;
+}
+async function taskPage(id) {
+  const t = await api('/tasks/' + id);
+  state.task = t;
+  state.records = Object.fromEntries(
+    t.applications.filter((a) => a.record).map((a) => [a.record.id, a.record]),
+  );
+  if (t.application?.record) state.records[t.application.record.id] = t.application.record;
+  const a = t.application;
+  let action = '';
+  if (t.mine) {
+    action = `${t.status !== 'cancelled' ? link('编辑内容', 'publish/' + t.id) + btn(t.status === 'published' ? '暂停招募' : '开放发布', t.status === 'published' ? 'pause-task' : 'publish-task', id) : ''}${btn('复制为草稿', 'copy-task', id)}${t.status !== 'cancelled' ? btn('取消需求', 'cancel-task', id, 'text-button') : ''}${btn('补充／更正成果地点', 'location', id, 'text-button')}`;
+  } else if (!requester() && t.kind === 'help') {
+    action =
+      !a || ['withdrawn', 'rejected'].includes(a.status)
+        ? btn(
+            t.remaining ? '报名参与' : '名额已满',
+            'apply',
+            id,
+            'primary',
+            t.remaining && t.status === 'published' ? '' : 'disabled',
+          )
+        : (['pending', 'accepted'].includes(a.status) ? btn('退出报名', 'withdraw', a.id) : '') +
+          (['accepted', 'checked_in', 'disputed'].includes(a.status) ||
+          (a.status === 'cancelled' && a.wasAccepted)
+            ? (a.status === 'accepted' ? btn('到场签到', 'checkin', a.id, 'primary') : '') +
+              btn('提交服务记录', 'submit-record', a.id, 'primary')
+            : '');
+  } else if (!requester() && t.kind === 'redeem') {
+    action = btn(
+      '申请兑换',
+      'book',
+      id,
+      'primary',
+      t.status === 'published' && t.remaining ? '' : 'disabled',
+    );
+  }
+  return shell(
+    `<section class="card task-hero"><div class="between"><span class="eyebrow">${t.kind === 'help' ? '助老帮扶' : '时间兑换'}</span>${status(a?.status || t.displayStatus || t.status)}</div><h1>${esc(t.title || '未命名草稿')}</h1><p>${esc(t.orgName)} · ${esc(t.category)}</p><div class="chips"><span>${hours(t.minutes)} 小时</span><span>剩余 ${t.remaining} / ${t.capacity} 名额</span></div></section>${changeBlock(t, a)}<section class="card"><h2>服务安排</h2><dl><dt>预约时间</dt><dd>${dateTime(t.start)} — ${dateTime(t.end)}</dd><dt>报名截止</dt><dd>${dateTime(t.deadline)}</dd><dt>服务区域</dt><dd>${esc(t.region)}</dd><dt>详细地址</dt><dd>${esc(t.address || '确认参与后向相关人员展示')}</dd>${t.meeting ? `<dt>集合说明</dt><dd>${esc(t.meeting)}</dd>` : ''}${t.contact ? `<dt>联系机构</dt><dd>${esc(t.contact)} · <a href="tel:${esc(t.phone)}">${esc(t.phone)}</a></dd>` : ''}</dl><div class="actions">${btn('查看到达说明', 'route', id)}${btn('在爱心地图查看', 'view-map', id, 'text-button')}</div></section><section class="card"><h2>需要做什么</h2><p class="pre">${esc(t.description || '暂无说明')}</p><h3>服务要求</h3><p class="pre">${esc(t.requirements || '愿意耐心陪伴，按约定时间参加。')}</p>${t.recipient ? `<h3>受助对象</h3><p>${esc(t.recipient)} · 预计 ${t.recipients} 人次</p>` : ''}${t.cancelReason ? `<p class="notice">取消原因：${esc(t.cancelReason)}</p>` : ''}</section>${t.mine && t.kind === 'help' ? `<section class="card"><h2>报名与服务管理</h2>${t.applications.length ? t.applications.map((x) => `<article class="participant"><div class="between"><h3>${esc(x.volunteer.name)}</h3>${status(x.status)}</div><p>${esc(x.volunteer.skills || '未填写擅长服务')}</p><p>${esc(x.message || '无报名留言')}</p>${x.reason ? `<p>${esc(x.reason)}</p>` : ''}${x.status === 'pending' ? `<div class="actions">${btn('确认参与', 'accept-app', x.id, 'primary')}${btn('不通过', 'reject-app', x.id)}</div>` : ''}${recordBlock(x.record, true)}</article>`).join('') : empty('暂时没有人报名', '发布后可在这里确认参与人员。')}</section>` : ''}${a ? `<section class="card"><h2>我的参与</h2>${status(a.status)}${a.reason ? `<p>${esc(a.reason)}</p>` : ''}${recordBlock(a.record, false)}</section>` : ''}${t.mine && t.kind === 'redeem' ? `<section class="card"><h2>兑换预约</h2>${t.bookings.length ? t.bookings.map(bookingCard).join('') : empty('暂无兑换预约')}</section>` : ''}${t.mine || (a && (['accepted', 'checked_in', 'submitted', 'disputed', 'confirmed'].includes(a.status) || a.wasAccepted)) ? `<section class="card"><h2>与本次服务有关</h2><div class="actions">${btn('留言与评价', 'comments', id)}${btn('服务材料', 'files', id)}${t.mine ? btn('需求变更记录', 'audit', id) : ''}</div></section>` : ''}<div class="sticky-actions actions">${action || '<p>当前状态无待执行操作</p>'}</div>`,
+    t.kind === 'redeem' ? 'bank' : 'services',
+    t.kind === 'redeem' ? '兑换服务详情' : '帮扶需求详情',
+    true,
+  );
+}
+async function publishPage(id) {
+  if (!requester()) throw new Error('仅需求方可以发布服务');
+  const old = !['help', 'redeem'].includes(id) ? await api('/tasks/' + id) : null;
+  state.editTask = old;
+  const t = old || {
+    kind: id || 'help',
+    region: state.user.region,
+    contact: state.user.contact,
+    phone: state.user.phone,
+    capacity: 1,
+    minutes: 60,
+    recipients: 1,
+    start: new Date(Date.now() + 86400000).toISOString(),
+    end: new Date(Date.now() + 90000000).toISOString(),
+  };
+  return shell(
+    `<form id="publish-form" class="publish-form"><section class="card"><h2>${t.kind === 'redeem' ? '兑换服务' : '帮扶需求'}信息</h2>${field('title', '服务标题', t.title)}${select('category', '服务类型', categories, t.category)}${field('description', '具体服务内容', t.description, 'textarea')}${field('recipient', '受助对象／适用人群', t.recipient)}${field('requirements', '能力要求与注意事项', t.requirements, 'textarea', false)}</section><section class="card"><h2>服务地点</h2><p class="notice">地图选址待接入，请手动填写。准确坐标可稍后补充；未填坐标不会虚构地图成果。</p>${field('region', '公开区域（不含门牌）', t.region)}${field('address', '详细地址（仅相关人员可见）', t.address)}${field('meeting', '集合和到达说明', t.meeting, 'textarea', false)}<div class="two-col">${field('lat', '纬度（可选）', t.lat, 'number', false, 'step="any" min="-85" max="85"')}${field('lng', '经度（可选）', t.lng, 'number', false, 'step="any" min="-180" max="180"')}</div></section><section class="card"><h2>时间与名额</h2>${field('start', '开始时间', localTime(t.start), 'datetime-local')}${field('end', '结束时间', localTime(t.end), 'datetime-local')}${field('deadline', '报名截止', localTime(t.deadline || t.start), 'datetime-local')}<div class="two-col">${field('minutes', t.kind === 'redeem' ? '兑换占用分钟' : '预计有效分钟', t.minutes, 'number', true, 'min="1" max="1440"')}${field('capacity', t.kind === 'redeem' ? '预约名额' : '志愿者人数', t.capacity, 'number', true, 'min="1" max="200"')}</div>${field('recipients', '预计受助人次', t.recipients, 'number', true, 'min="1" max="10000"')}</section><section class="card"><h2>联系人</h2>${field('contact', '机构联系人', t.contact)}${field('phone', '联系电话', t.phone, 'tel')}<p class="notice">服务开始或完成后，通过记录核实与更正处理时长。已有确认人员的核心变更需逐一确认。</p><p class="form-error" role="alert"></p><div class="actions"><button class="primary" name="mode" value="published">${old ? '保存修改' : '发布服务'}</button>${!old || old.status === 'draft' ? '<button class="secondary" name="mode" value="draft" formnovalidate>保存草稿</button>' : ''}${btn('公开预览', 'preview-task')}</div></section></form>`,
+    t.kind === 'redeem' ? 'bank' : 'services',
+    old ? '编辑服务' : '发布服务',
+    true,
+  );
+}
 
-document.addEventListener('click',async event=>{const b=event.target.closest('[data-action]');if(!b||b.disabled)return;event.preventDefault();b.disabled=true;try{await onAction(b.dataset.action,b.dataset.id,b);}catch(error){toast(error.message);}finally{b.disabled=false;}});
-document.addEventListener('submit',async event=>{
- event.preventDefault();const form=event.target,submit=event.submitter;if(form.dataset.busy)return;form.dataset.busy='1';if(submit)submit.disabled=true;const b=formData(form);
- try{
-  if(form.id==='modal-form')await modalSubmit(b,form);
-  if(form.id==='login-form'){const result=await api('/auth/verify','POST',{...b,agreed:b.agreed==='on',role:submit.value});state.user=result.user;state.csrf=result.csrf;state.filter={};state.tab='discover';state.bankTab=requester()?'ledger':'offers';go('map');await render();}
-  if(form.id==='profile-form'){state.user=await api('/profile','PUT',b);await render();}
-  if(form.id==='filter-form'){state.filter=b;await render();}
-  if(form.id==='publish-form'){const old=state.editTask;const result=await api('/tasks'+(old?'/'+old.id:''),old?'PUT':'POST',{...b,kind:old?.kind||current().split('/')[1]||'help',status:old&&old.status!=='draft'?old.status:submit.value,revision:old?.revision});dirty=false;go('task/'+result.id);toast(result.hasPendingChange?'已通知参与者确认安排变更':'服务内容已保存');}
- }catch(error){errorIn(form,error);}finally{delete form.dataset.busy;if(submit)submit.disabled=false;}
+async function bankPage() {
+  const bank = await api('/bank');
+  state.bank = bank;
+  const btab = state.bankTab;
+  const offers = await api(
+    '/tasks?' +
+      new URLSearchParams({ kind: 'redeem', ...state.filter, ...(requester() ? { scope: 'mine' } : {}) }),
+  );
+  const totals = bank.accounts.reduce(
+    (s, a) => ({
+      available: s.available + a.available,
+      held: s.held + a.held,
+      pending: s.pending + a.pending,
+      used: s.used + a.used,
+    }),
+    { available: 0, held: 0, pending: 0, used: 0 },
+  );
+  const hero = requester()
+    ? `<p>本机构累计确认发放</p><strong>${hours(bank.issued)} <small>小时</small></strong><div class="bank-mini"><span>待核实 ${hours(bank.pending)} 小时</span><span>待处理兑换 ${bank.bookings.filter((b) => ['pending', 'disputed', 'reschedule'].includes(b.status)).length} 笔</span></div>`
+    : `<p>可用时间权益</p><strong>${hours(totals.available)} <small>小时</small></strong><div class="bank-mini"><span>待确认 ${hours(totals.pending)} 小时</span><span>兑换占用 ${hours(totals.held)} 小时</span></div><small>按发放机构分别使用 · 服务与休息时间分开记录</small>`;
+  const options = requester()
+    ? [
+        ['ledger', '发放记录'],
+        ['offers', '兑换服务'],
+        ['bookings', '兑换预约'],
+      ]
+    : [
+        ['offers', '可兑换服务'],
+        ['bookings', '我的兑换'],
+        ['ledger', '时间明细'],
+      ];
+  let content = '';
+  if (btab === 'offers')
+    content = `${requester() ? link(icon('plus') + ' 新增兑换服务', 'publish/redeem', 'primary wide') : ''}${filters(select('org', '服务机构', [['', '全部机构'], ...bank.accounts.map((a) => [a.orgId, a.orgName])], state.filter.org))}${offers.length ? offers.map(taskCard).join('') : empty('暂无可兑换服务', '机构发布兑换项目后，将在这里展示。')}`;
+  if (btab === 'bookings')
+    content = `${select('booking-status', '预约状态', [['', '全部'], ...['pending', 'accepted', 'reschedule', 'result_pending', 'disputed', 'completed', 'cancelled'].map((s) => [s, labels[s]])], state.bookingStatus)}${
+      bank.bookings
+        .filter((b) => !state.bookingStatus || b.status === state.bookingStatus)
+        .map(bookingCard)
+        .join('') || empty('暂无兑换记录', '预约后可在这里跟进安排与履约结果。')
+    }`;
+  if (btab === 'ledger')
+    content = `${select(
+      'ledger-type',
+      '流水类型',
+      [
+        ['', '全部'],
+        ['credit', '服务入账'],
+        ['redeem', '兑换扣除'],
+        ['correction', '时长更正'],
+        ['refund', '兑换退回'],
+      ],
+      state.ledgerType,
+    )}${field('ledger-date', '记录日期', state.ledgerDate || '', 'date', false)}${
+      bank.ledger
+        .filter(
+          (r) =>
+            (!state.ledgerType || r.kind === state.ledgerType) &&
+            (!state.ledgerDate || new Date(r.created).toLocaleDateString('en-CA') === state.ledgerDate),
+        )
+        .map(
+          (r) =>
+            `<a class="ledger-row" href="#task/${esc(r.task_id)}"><div><b>${esc(requester() ? r.userName : r.orgName)}</b><p>${esc(r.note)}</p><small>${dateTime(r.created)}</small></div><strong class="${r.minutes > 0 ? 'credit' : ''}">${r.minutes > 0 ? '+' : ''}${r.minutes}<small> 分钟</small></strong></a>`,
+        )
+        .join('') || empty('暂无时间流水', '经核实的实际服务将生成时间记录。')
+    }<p class="notice">占用与释放记录保留在对应兑换预约及其变更记录中。兑换不会减少历史志愿贡献。</p>`;
+  return shell(
+    `<section class="bank-hero">${icon('clock')}${hero}</section>${!requester() ? `<details class="card accounts"><summary>查看各机构账户与累计贡献</summary>${bank.accounts.map((a) => `<article class="account"><b>${esc(a.orgName)}</b><div class="account-numbers"><span>可用 ${a.available} 分钟</span><span>占用 ${a.held} 分钟</span><span>待确认 ${a.pending} 分钟</span><span>累计贡献 ${a.contributed} 分钟</span><span>已使用 ${a.used} 分钟</span><span>异议冻结 ${a.disputed || 0} 分钟</span></div>${a.debt ? `<p class="notice">更正后待补足 ${a.debt} 分钟，暂不可新增兑换。</p>` : ''}</article>`).join('') || '<p>参与服务后，查看对应机构的时间权益。</p>'}</details>` : ''}${tabs(options, btab, 'bank-tab')}<section class="surface">${content}</section>`,
+    'bank',
+    '时间银行',
+  );
+}
+async function bookingPage(id) {
+  const b = await api('/bookings/' + id);
+  state.booking = b;
+  const org = requester();
+  let actions = '';
+  if (b.status === 'pending' && org) actions += btn('接受预约', 'accept-booking', id, 'primary');
+  if (['pending', 'accepted'].includes(b.status))
+    actions += btn('申请改约', 'reschedule', id) + btn('取消预约', 'cancel-booking', id);
+  if (b.status === 'reschedule' && b.change.by !== state.user.id)
+    actions +=
+      btn('接受改约', 'accept-reschedule', id, 'primary') + btn('不同意改约', 'decline-reschedule', id);
+  if (['accepted', 'disputed'].includes(b.status) && org)
+    actions += btn('记录实际履约', 'booking-result', id, 'primary');
+  if (b.status === 'accepted' && org) actions += btn('协商追加服务', 'extra', id);
+  if (b.extra && !org)
+    actions += btn('同意追加', 'accept-extra', id, 'primary') + btn('拒绝追加', 'decline-extra', id);
+  if (b.status === 'result_pending' && !org)
+    actions +=
+      btn('确认实际结果', 'complete-booking', id, 'primary') + btn('提出异议', 'dispute-booking', id);
+  if (b.status === 'completed' && !b.correction) actions += btn('申请更正扣除', 'booking-correction', id);
+  if (b.correction && b.correction.by !== state.user.id)
+    actions +=
+      btn('接受更正', 'accept-correction', id, 'primary') + btn('拒绝更正', 'decline-correction', id);
+  if (b.task.pending?.answers[id] === 'pending' && !org)
+    actions +=
+      btn('同意项目变更', 'accept-booking-change', id, 'primary') +
+      btn('不同意并取消', 'decline-booking-change', id);
+  return shell(
+    `<section class="card"><div class="between"><span class="eyebrow">兑换预约</span>${status(b.status)}</div><h1>${esc(b.title)}</h1><p>${esc(b.orgName)} · 申请人 ${esc(b.applicant)}</p><h2>${dateTime(b.start)} — ${dateTime(b.end)}</h2><p>${esc(b.address)}</p><p>受助对象：${esc(b.recipient)} · <a href="tel:${esc(b.phone)}">${esc(b.phone)}</a></p><p class="pre">${esc(b.needs || '暂无特殊需要')}</p><p>占用 ${b.held} 分钟 · 实际扣除 ${b.charged} 分钟</p>${link('查看项目内容', 'task/' + b.taskId, 'text-button')}</section>${b.task.pending ? changeBlock(b.task) : ''}${b.change ? `<section class="card notice"><h3>改约等待另一方确认</h3><p>${dateTime(b.change.start)} — ${dateTime(b.change.end)}</p><p>${esc(b.change.reason)}</p></section>` : ''}${b.extra ? `<section class="card notice"><h3>追加 ${b.extra.minutes} 分钟待确认</h3><p>${esc(b.extra.reason)}</p></section>` : ''}${b.result ? `<section class="card"><h2>实际履约结果</h2><p>${esc(b.result.content)}</p><p>实际 ${b.result.minutes} 分钟 · ${b.result.recipients} 受助人次</p><p class="muted">申请人确认后结算实际时长，剩余占用自动释放。</p></section>` : ''}${b.dispute || b.reason ? `<section class="card notice">${esc(b.dispute || b.reason)}</section>` : ''}${b.correction ? `<section class="card notice"><h3>扣除更正为 ${b.correction.minutes} 分钟</h3><p>${esc(b.correction.reason)}</p></section>` : ''}<section class="card"><div class="actions">${btn('留言与评价', 'comments', id)}${btn('服务材料', 'files', id)}${btn('变更记录', 'audit', id)}</div></section><div class="sticky-actions actions">${actions || '<p>暂无待执行操作，可通过留言联系对方。</p>'}</div>`,
+    'bank',
+    '兑换预约详情',
+    true,
+  );
+}
+async function profilePage() {
+  const map = await api('/map?scope=mine');
+  return shell(
+    `<section class="profile-hero"><div class="avatar">${icon(requester() ? 'grid' : 'user')}</div><div><p class="eyebrow">${requester() ? '需求方 · 让善意在这里相遇' : '志愿者 · 让时间成为礼物'}</p><h1>${esc(state.user.name)}</h1><p>${esc(state.user.region)}</p></div>${btn('编辑', 'edit-profile', '', 'text-button')}</section><section class="card">${summary(map.summary)}</section><section class="card menu-list">${btn(`${icon('map')} ${requester() ? '本机构成果' : '我的爱心足迹'} ${icon('arrow')}`, 'footprints', '', 'menu-item')}${btn(`${icon('grid')} ${requester() ? '服务管理与历史记录' : '我参与的服务'} ${icon('arrow')}`, 'history', '', 'menu-item')}${btn(`${icon('clock')} 兑换记录 ${icon('arrow')}`, 'my-bookings', '', 'menu-item')}${btn(`${icon('bell')} 消息通知 ${icon('arrow')}`, 'notices', '', 'menu-item')}${btn(`${icon('user')} 账户与显示设置 ${icon('arrow')}`, 'settings', '', 'menu-item')}${btn('使用说明与隐私约定', 'terms', '', 'menu-item')}${btn('意见反馈', 'feedback', '', 'menu-item')}</section>${btn('退出登录', 'logout', '', 'secondary wide')}<p class="privacy-note">时光有路 · 帮助一个人，点亮一个地方</p>`,
+    'profile',
+    '我的',
+  );
+}
+
+async function render() {
+  const token = ++renderToken;
+  const route = current();
+  dirty = false;
+  if (!state.user) {
+    root.innerHTML = login();
+    return;
+  }
+  if (!state.user.profileComplete) {
+    root.innerHTML = completeProfile();
+    return;
+  }
+  root.setAttribute('aria-busy', 'true');
+  try {
+    let html;
+    const [page, id] = route.split('/');
+    if (page === 'map' || page === 'login') html = await mapPage();
+    else if (page === 'services') html = await servicesPage();
+    else if (page === 'bank') html = await bankPage();
+    else if (page === 'profile') html = await profilePage();
+    else if (page === 'task') html = await taskPage(id);
+    else if (page === 'booking') html = await bookingPage(id);
+    else if (page === 'publish') html = await publishPage(id || 'help');
+    else throw new Error('页面不存在');
+    if (token !== renderToken) return;
+    root.innerHTML = html;
+    document.title = `时光有路 · ${root.querySelector('h1')?.textContent || '爱心地图'}`;
+  } catch (e) {
+    if (token === renderToken)
+      root.innerHTML = shell(
+        `<section class="card">${empty('暂时无法打开', e.message)}${btn('重新加载', 'refresh', '', 'primary')}${link('返回爱心地图', 'map')}</section>`,
+        'map',
+        '稍后重试',
+        true,
+      );
+  } finally {
+    root.removeAttribute('aria-busy');
+  }
+}
+
+async function onAction(action, id, button) {
+  if (action === 'close') {
+    dialog.close();
+    return;
+  }
+  if (action === 'back') {
+    history.length > 1 ? history.back() : go('map');
+    return;
+  }
+  if (action === 'refresh') return state.config ? render() : boot();
+  if (action === 'code') {
+    const form = document.querySelector('#login-form'),
+      phone = form.elements.phone.value;
+    if (!/^1\d{10}$/.test(phone)) throw new Error('请输入 11 位有效手机号');
+    const result = await api('/auth/code', 'POST', { phone });
+    document.querySelector('#code-info').textContent = result.developmentCode
+      ? '开发模拟验证码：' + result.developmentCode
+      : '验证码已发送，请查看短信';
+    return;
+  }
+  if (action === 'terms')
+    return modal(
+      '使用说明与隐私约定',
+      `<p>时光有路连接社区助老需求与志愿者。当前仅有需求方和志愿者两个身份。</p><p>手机号用于登录。个人资料、联系信息和服务材料仅供相关参与者处理本次服务。公共成果只展示概略区域与匿名统计。</p><p>时间权益来自机构核实的实际服务，不是现金，按发放机构分别兑换。未提供的兑换服务取消后释放占用，争议由双方通过关联记录沟通并核实。</p><p>请取得受助者同意，避免上传不必要的身份、医疗或其他敏感材料。可通过任务留言申请资料更正，个人资料可在“我的”维护。</p><p>地图、短信、文件存储的真实接入以当前环境说明为准。</p>`,
+    );
+  if (action === 'logout')
+    return modal(
+      '退出当前账户',
+      '<p>服务记录和时间账户会保存在数据库中。确认退出？</p>',
+      async () => {
+        await api('/auth/logout', 'POST', {});
+        dialog.close();
+        state.user = null;
+        state.csrf = null;
+        state.filter = {};
+        go('login');
+        await render();
+      },
+      '退出登录',
+    );
+  if (action === 'service-tab') {
+    state.tab = id;
+    state.filter = {};
+    return render();
+  }
+  if (action === 'bank-tab') {
+    state.bankTab = id;
+    state.filter = {};
+    return render();
+  }
+  if (action === 'reset-filter') {
+    state.filter = {};
+    return render();
+  }
+  if (action === 'footprints') {
+    state.mapScope = 'mine';
+    state.city = '';
+    if (current() === 'map') return render();
+    go('map');
+    return;
+  }
+  if (action === 'collective') {
+    state.mapScope = 'all';
+    return render();
+  }
+  if (action === 'history') {
+    state.tab = requester() ? 'discover' : 'mine';
+    state.filter = {};
+    go('services');
+    return;
+  }
+  if (action === 'my-bookings') {
+    state.bankTab = 'bookings';
+    go('bank');
+    return;
+  }
+  if (action === 'collapse') {
+    state.collapsed = !state.collapsed;
+    return render();
+  }
+  if (action === 'city')
+    return modal(
+      '选择服务区域',
+      field('city', '城市或区县（留空查看全部）', state.city, 'text', false) +
+        '<p class="notice">目前手动选择区域，未调用实时定位。</p>',
+      async (b) => {
+        state.city = b.city;
+        dialog.close();
+        await render();
+      },
+      '查看这个区域',
+    );
+  if (action === 'map-filter')
+    return modal(
+      '发现合适的帮助',
+      field('q', '区域或关键词', state.city, 'text', false) +
+        select('category', '服务类型', [['', '全部'], ...categories]) +
+        field('date', '日期', '', 'date', false) +
+        select('minutes', '服务时长', [
+          ['', '不限'],
+          ['30', '30 分钟'],
+          ['60', '60 分钟'],
+          ['90', '90 分钟'],
+        ]) +
+        '<p class="notice">距离、预计到达时间和含往返的空闲时间推荐，需地图路线接入后启用。</p>',
+      async (b) => {
+        state.filter = b;
+        state.tab = 'discover';
+        dialog.close();
+        go('services');
+      },
+    );
+  if (action === 'cell') {
+    const c = state.cells[Number(id)];
+    return modal(
+      '这个地方的爱心记忆',
+      `<h3>${esc(c.region)}</h3><p>${c.count} 次有效帮扶 · ${c.volunteers} 位共同参与的志愿者</p><p>${esc(c.categories.join('、'))}</p><p>最近更新 ${dateTime(c.latest)}</p><p class="muted">已点亮不代表这里的所有需求都已解决。</p>${btn('继续帮助这里', 'help-cell', id, 'primary wide')}`,
+    );
+  }
+  if (action === 'help-cell') {
+    state.filter = { q: state.cells[Number(id)].region };
+    state.tab = 'discover';
+    dialog.close();
+    go('services');
+    return;
+  }
+  if (action === 'view-map') {
+    state.city = state.task.region;
+    state.mapScope = 'all';
+    go('map');
+    return;
+  }
+  if (action === 'route')
+    return modal(
+      '到达与联系说明',
+      `<p class="notice">百度地图路线待接入，暂不能提供真实距离和预计耗时。</p><p>${esc(state.task.address || state.task.region)}</p><p>${esc(state.task.meeting || '请与机构确认集合安排。')}</p>${state.task.phone ? `<a class="primary wide" href="tel:${esc(state.task.phone)}">联系 ${esc(state.task.contact)}</a>` : ''}${btn('复制文字地址', 'copy-address', '', 'secondary wide')}`,
+    );
+  if (action === 'copy-address') {
+    await navigator.clipboard.writeText(state.task.address || state.task.region);
+    toast('地址已复制');
+    return;
+  }
+  if (action === 'edit-profile')
+    return modal('维护资料', profileFields(), async (b) => {
+      state.user = await api('/profile', 'PUT', b);
+      dialog.close();
+      await render();
+    });
+  if (action === 'settings')
+    return modal(
+      '账户与显示设置',
+      `<p>${esc(state.user.phone)} · ${requester() ? '需求方' : '志愿者'}</p>${select(
+        'fontSize',
+        '文字大小',
+        [
+          ['normal', '标准'],
+          ['large', '大字'],
+        ],
+        state.user.settings?.fontSize || 'normal',
+      )}<label class="check-row"><input name="notifications" type="checkbox" ${state.user.settings?.notifications !== false ? 'checked' : ''}>开启服务提醒</label><p>业务状态通知仍会保留在消息中心，便于追溯。</p>`,
+      async (b) => {
+        state.user = await api('/profile', 'PUT', {
+          ...state.user,
+          settings: { fontSize: b.fontSize, notifications: b.notifications === 'on' },
+        });
+        dialog.close();
+        await render();
+      },
+    );
+  if (action === 'feedback') {
+    const list = await api('/feedback');
+    return modal(
+      '意见反馈',
+      field('content', '你的建议或遇到的问题', '', 'textarea') +
+        `<details><summary>已提交反馈（${list.length}）</summary>${list.map((f) => `<p>${dateTime(f.created)} · 已收到<br>${esc(f.content)}</p>`).join('')}</details>`,
+      (b) => mutate('/feedback', b),
+      '提交反馈',
+    );
+  }
+  if (action === 'notices') {
+    const list = await api('/notices');
+    return modal(
+      '消息通知',
+      `${btn('全部标为已读', 'read-all', '', 'text-button')}${list.map((n) => `<button class="notice-item ${n.read ? 'read' : ''}" data-action="notice" data-id="${esc(n.id)}" data-target="${esc(n.target)}"><b>${esc(n.title)}</b><small>${dateTime(n.created)}</small></button>`).join('') || empty('暂无消息')}`,
+    );
+  }
+  if (action === 'notice') {
+    await api('/notices/' + encodeURIComponent(id), 'POST', {});
+    dialog.close();
+    if (current() === button.dataset.target) await render();
+    else go(button.dataset.target);
+    return;
+  }
+  if (action === 'read-all') {
+    await api('/notices/read', 'PUT', {});
+    return onAction('notices');
+  }
+  if (action === 'audit') {
+    const list = await api('/audit/' + id);
+    return modal(
+      '变更与核实记录',
+      list
+        .map(
+          (a) =>
+            `<article class="record-block"><b>${esc({ create: '创建', edit: '编辑', cancel: '取消', confirm: '核实', correct: '更正', resolve: '异议处理', revoke: '撤销', location: '更正地点', 'booking-correction': '兑换更正' }[a.action] || a.action)}</b><p>${esc(a.reason || '记录已保存')}</p><small>${dateTime(a.created)}</small>${a.before?.confirmed !== undefined ? `<p>确认时长 ${a.before.confirmed} → ${a.after.confirmed} 分钟</p>` : ''}</article>`,
+        )
+        .join('') || empty('暂无变更记录'),
+    );
+  }
+  if (action === 'comments') {
+    const list = await api('/comments/' + id);
+    return modal(
+      '任务留言与评价',
+      `<div class="comments">${list.map((c) => `<article><b>${esc(c.name)} · ${c.type === 'review' ? '评价' : '留言'}</b><p class="pre">${esc(c.content)}</p><small>${dateTime(c.created)}</small></article>`).join('') || '<p>还没有留言，可在这里沟通本次安排。</p>'}</div>${select(
+        'type',
+        '内容类型',
+        [
+          ['message', '留言'],
+          ['review', '服务评价'],
+        ],
+      )}${field('content', '内容', '', 'textarea')}`,
+      (b) => mutate('/comments/' + id, b),
+      '发送',
+    );
+  }
+  if (action === 'files') {
+    const files = await api('/files/' + id);
+    return modal(
+      '本次服务材料',
+      `${files.map((f) => `<p><a href="/api/attachments/${esc(f.id)}" download>${esc(f.name)}</a> · ${dateTime(f.created)}</p>`).join('') || '<p>暂无附件</p>'}${state.config.adapters.upload === 'local' ? `<p class="notice">开发环境附件存放本地，未接入 COS。仅相关参与者可访问。请勿上传不必要的敏感资料。</p>${field('file', '选择图片或 PDF（最大 3MB）', '', 'file', true, 'accept="image/png,image/jpeg,image/webp,application/pdf"')}` : '<p class="notice">COS 尚未配置，暂不开放附件上传。仍可通过服务文字记录完成核实。</p>'}`,
+      state.config.adapters.upload === 'local'
+        ? async (b, form) => {
+            const file = form.elements.file.files[0];
+            if (file.size > 3000000) throw new Error('附件不能超过 3MB');
+            const base64 = await new Promise((resolve, reject) => {
+              const r = new FileReader();
+              r.onload = () => resolve(r.result.split(',')[1]);
+              r.onerror = reject;
+              r.readAsDataURL(file);
+            });
+            await mutate('/attachments', { ref: id, name: file.name, type: file.type, base64 });
+          }
+        : null,
+      '上传材料',
+    );
+  }
+  if (action === 'preview-task') {
+    const b = formData(document.querySelector('#publish-form'));
+    return modal(
+      '公开预览',
+      `<h3>${esc(b.title || '未命名草稿')}</h3><p>${esc(state.user.name)} · ${esc(b.region)}</p><p>${dateTime(b.start)} — ${dateTime(b.end)}</p><p class="pre">${esc(b.description)}</p><p>${esc(b.minutes)} 分钟 · ${esc(b.capacity)} 名额</p><p class="notice">详细门牌、受助者信息和联系人电话仅向确认参与者展示。</p>`,
+    );
+  }
+  if (action === 'apply')
+    return modal(
+      '报名参与',
+      `<p>报名后等待机构确认。通过后可查看集合地址。</p>${field('message', '给机构的留言', '', 'textarea', false)}`,
+      (b) => mutate('/tasks/' + id + '/apply', b),
+      '提交报名',
+    );
+  const simpleApps = {
+    'accept-app': 'accept',
+    checkin: 'checkin',
+    'accept-change': 'change',
+    'decline-change': 'change',
+  };
+  if (simpleApps[action])
+    return mutate('/applications/' + id, {
+      action: simpleApps[action],
+      ...(action.endsWith('change') ? { answer: action === 'accept-change' ? 'accept' : 'decline' } : {}),
+    });
+  if (action === 'reject-app' || action === 'withdraw')
+    return reason(
+      action === 'withdraw' ? '退出报名' : '不通过报名',
+      '/applications/' + id,
+      action === 'withdraw' ? 'withdraw' : 'reject',
+    );
+  if (['pause-task', 'publish-task', 'copy-task'].includes(action)) {
+    const result = await mutate('/tasks/' + id + '/action', {
+      action: { 'pause-task': 'pause', 'publish-task': 'publish', 'copy-task': 'copy' }[action],
+    });
+    if (action === 'copy-task') go('publish/' + result.id);
+    return;
+  }
+  if (action === 'cancel-task') return reason('取消这项需求', '/tasks/' + id + '/action', 'cancel');
+  if (action === 'location')
+    return modal(
+      '核实主要成果地点',
+      `<p class="notice">只修正统计地点，不修改已约定的私人地址，不增加时长。已有成果会按新地点重新计算。</p>${field('lat', '纬度', state.task.lat, 'number', true, 'step="any" min="-85" max="85"')}${field('lng', '经度', state.task.lng, 'number', true, 'step="any" min="-180" max="180"')}${field('reason', '核实依据', '', 'textarea')}`,
+      (b) => mutate('/tasks/' + id + '/action', { action: 'location', ...b }),
+    );
+  if (action === 'submit-record') {
+    const t = state.task,
+      a = t.application;
+    return modal(
+      '提交实际服务记录',
+      `${field('start', '实际开始', localTime(a.record?.start || t.start), 'datetime-local')}${field('end', '实际结束', localTime(a.record?.end || new Date(Math.min(Date.now(), Date.parse(t.end)))), 'datetime-local')}${field('rest', '休息分钟', a.record?.rest || 0, 'number', true, 'min="0" max="1440"')}${field('content', '实际完成的服务', a.record?.content, 'textarea')}${field('note', '未签到／补录／异常说明', a.record?.note, 'textarea', !a.checkin)}<p>有效时长按起止时间减去休息计算；由机构核实后入账。</p>`,
+      (b) => mutate('/applications/' + id, { action: 'submit', ...b }),
+      '提交核实',
+    );
+  }
+  if (['confirm-record', 'resolve-record', 'correct-record'].includes(action)) {
+    const r = state.records[id];
+    return modal(
+      '核实实际服务',
+      `<p>提交 ${r.submitted} 分钟 · ${esc(r.content)}</p>${field('minutes', '确认有效分钟', r.status === 'submitted' ? r.submitted : r.confirmed, 'number', true, `min="0" max="${r.submitted}"`)}${field('recipients', '实际受助人次', r.recipients || 1, 'number', true, 'min="0" max="10000"')}${field('reason', '核实／更正说明', r.reason, 'textarea', action !== 'confirm-record')}<p>时长少于提交值时必须填写说明。更正会同步时间账户和地图。</p>`,
+      (b) =>
+        mutate('/records/' + id, {
+          action: { 'confirm-record': 'confirm', 'resolve-record': 'resolve', 'correct-record': 'correct' }[
+            action
+          ],
+          ...b,
+        }),
+    );
+  }
+  if (action === 'revoke-record')
+    return reason('撤销无效服务记录', '/records/' + id, 'revoke', { recipients: 0 });
+  if (action === 'dispute-record') return reason('对服务结果提出异议', '/records/' + id, 'dispute');
+  if (action === 'book')
+    return modal(
+      '申请时间兑换',
+      `<p>将占用 ${state.task.minutes} 分钟对应机构的时间权益，待双方确认履约后扣除。</p>${field('recipient', '受助对象（本人或家中老人）')}${field('phone', '联系电话', state.user.phone, 'tel')}${field('needs', '需要协助的事项', '', 'textarea', false)}<label class="check-row"><input name="consent" type="checkbox" required>我已获得受助者同意并核对服务安排</label>`,
+      (b) => mutate('/tasks/' + id + '/book', { ...b, consent: b.consent === 'on' }),
+      '确认申请',
+    );
+  const bookingActions = {
+    'accept-booking': ['accept'],
+    'accept-reschedule': ['respond', 'accept'],
+    'decline-reschedule': ['respond', 'decline'],
+    'accept-extra': ['extra-response', 'accept'],
+    'decline-extra': ['extra-response', 'decline'],
+    'accept-correction': ['correction-response', 'accept'],
+    'decline-correction': ['correction-response', 'decline'],
+    'accept-booking-change': ['task-change', 'accept'],
+    'decline-booking-change': ['task-change', 'decline'],
+  };
+  if (bookingActions[action]) {
+    const [a, answer] = bookingActions[action];
+    return mutate('/bookings/' + id, { action: a, ...(answer ? { answer } : {}) });
+  }
+  if (action === 'cancel-booking') return reason('取消兑换预约', '/bookings/' + id, 'cancel');
+  if (action === 'dispute-booking') return reason('对兑换结果提出异议', '/bookings/' + id, 'dispute');
+  if (action === 'reschedule') {
+    const b = state.booking;
+    return modal(
+      '申请调整预约时间',
+      field('start', '新的开始时间', localTime(b.start), 'datetime-local') +
+        field('end', '新的结束时间', localTime(b.end), 'datetime-local') +
+        field('reason', '改约原因', '', 'textarea'),
+      (b) => mutate('/bookings/' + id, { ...b, action: 'reschedule' }),
+    );
+  }
+  if (action === 'booking-result')
+    return modal(
+      '记录实际履约结果',
+      field(
+        'minutes',
+        '实际服务分钟',
+        state.booking.held,
+        'number',
+        true,
+        `min="0" max="${state.booking.held}"`,
+      ) +
+        field('recipients', '受助人次', 1, 'number', true, 'min="0"') +
+        field('content', '实际完成内容／未完成原因', '', 'textarea'),
+      (b) => mutate('/bookings/' + id, { ...b, action: 'result' }),
+      '提交申请人确认',
+    );
+  if (action === 'extra')
+    return modal(
+      '协商追加服务',
+      field('minutes', '追加分钟数', 15, 'number', true, 'min="1" max="1440"') +
+        field('reason', '追加说明', '', 'textarea'),
+      (b) => mutate('/bookings/' + id, { ...b, action: 'extra' }),
+    );
+  if (action === 'complete-booking')
+    return modal(
+      '确认兑换结果',
+      `<p>${esc(state.booking.result.content)}</p><p>确认实际服务 ${state.booking.result.minutes} 分钟，结算后释放其余占用。</p>`,
+      () => mutate('/bookings/' + id, { action: 'complete' }),
+      '确认完成并结算',
+    );
+  if (action === 'booking-correction')
+    return modal(
+      '申请更正实际扣除',
+      field(
+        'minutes',
+        '更正后扣除分钟',
+        state.booking.charged,
+        'number',
+        true,
+        `min="0" max="${state.booking.charged}"`,
+      ) +
+        field('reason', '更正原因', '', 'textarea') +
+        '<p>对方同意后，差额退回对应机构账户，并重新计算兑换成果。</p>',
+      (b) => mutate('/bookings/' + id, { ...b, action: 'correction' }),
+    );
+  if (action === 'share') return shareCard();
+}
+
+async function shareCard() {
+  const data = await api('/map?scope=mine'),
+    s = data.summary;
+  if (!s.services) {
+    toast('有已核实的服务记录后，即可生成足迹卡');
+    return;
+  }
+  const canvas = document.createElement('canvas');
+  canvas.width = 720;
+  canvas.height = 900;
+  const c = canvas.getContext('2d');
+  c.fillStyle = '#fff6ee';
+  c.fillRect(0, 0, 720, 900);
+  c.fillStyle = '#ef715f';
+  c.font = 'bold 34px sans-serif';
+  c.fillText('时光有路 · 我的爱心足迹', 55, 85);
+  c.fillStyle = '#253644';
+  c.font = 'bold 44px sans-serif';
+  c.fillText('每一份善意，都有迹可循', 55, 180);
+  c.font = '28px sans-serif';
+  c.fillText(`点亮 ${s.places} 个地点`, 55, 280);
+  c.fillText(`完成 ${s.services} 次服务`, 55, 340);
+  c.fillText(`累计贡献 ${hours(s.minutes)} 小时`, 55, 400);
+  c.font = '22px sans-serif';
+  c.fillStyle = '#658273';
+  [...new Set(data.cells.map((c) => c.region))]
+    .slice(0, 6)
+    .forEach((region, i) => c.fillText('♡ ' + region, 55, 490 + i * 45, 610));
+  c.fillStyle = '#71808d';
+  c.fillText('根据已核实记录生成 · 区域文字摘要', 55, 820);
+  if (state.config.environment !== 'production') c.fillText('开发环境记录 · 非生产公益成果', 55, 860);
+  const url = canvas.toDataURL('image/png');
+  modal(
+    '预览爱心足迹卡',
+    `<img class="share-preview" src="${url}" alt="本人的匿名爱心成果卡"><a class="primary wide" href="${url}" download="时光有路-爱心足迹.png">保存图片后分享</a><p class="privacy-note">未接入地图底图，以区域文字摘要呈现；不包含身份、门牌或联系方式。</p>`,
+  );
+}
+
+document.addEventListener('click', async (event) => {
+  const b = event.target.closest('[data-action]');
+  if (!b || b.disabled) return;
+  event.preventDefault();
+  b.disabled = true;
+  try {
+    await onAction(b.dataset.action, b.dataset.id, b);
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    b.disabled = false;
+  }
 });
-document.addEventListener('input',e=>{if(e.target.closest('#publish-form'))dirty=true;});
-document.addEventListener('change',async e=>{if(e.target.id==='show-needs'){state.showNeeds=e.target.checked;await render();}const name=e.target.name;if(name==='booking-status'){state.bookingStatus=e.target.value;await render();}if(name==='ledger-type'){state.ledgerType=e.target.value;await render();}if(name==='ledger-date'){state.ledgerDate=e.target.value;await render();}});
-window.addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue='';}});
-window.addEventListener('hashchange',async()=>{if(dirty&&!confirm('当前修改尚未保存，确认离开？')){history.replaceState(null,'',lastRoute);return;}state.scroll.set(lastRoute,window.scrollY);lastRoute=location.hash;dialog.close();await render();window.scrollTo(0,state.scroll.get(lastRoute)||0);});
-async function boot(){try{[state.config,{user:state.user,csrf:state.csrf}]=await Promise.all([api('/config'),api('/me')]);state.bankTab=requester()?'ledger':'offers';await render();}catch(e){root.innerHTML=`<main class="setup-page">${empty('连接暂时不可用',e.message)}${btn('重试','refresh','','primary')}</main>`;}}
+document.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const form = event.target,
+    submit = event.submitter;
+  if (form.dataset.busy) return;
+  form.dataset.busy = '1';
+  if (submit) submit.disabled = true;
+  const b = formData(form);
+  try {
+    if (form.id === 'modal-form') await modalSubmit(b, form);
+    if (form.id === 'login-form') {
+      const result = await api('/auth/verify', 'POST', {
+        ...b,
+        agreed: b.agreed === 'on',
+        role: submit.value,
+      });
+      state.user = result.user;
+      state.csrf = result.csrf;
+      state.filter = {};
+      state.tab = 'discover';
+      state.bankTab = requester() ? 'ledger' : 'offers';
+      go('map');
+      await render();
+    }
+    if (form.id === 'profile-form') {
+      state.user = await api('/profile', 'PUT', b);
+      await render();
+    }
+    if (form.id === 'filter-form') {
+      state.filter = b;
+      await render();
+    }
+    if (form.id === 'publish-form') {
+      const old = state.editTask;
+      const result = await api('/tasks' + (old ? '/' + old.id : ''), old ? 'PUT' : 'POST', {
+        ...b,
+        kind: old?.kind || current().split('/')[1] || 'help',
+        status: old && old.status !== 'draft' ? old.status : submit.value,
+        revision: old?.revision,
+      });
+      dirty = false;
+      go('task/' + result.id);
+      toast(result.hasPendingChange ? '已通知参与者确认安排变更' : '服务内容已保存');
+    }
+  } catch (error) {
+    errorIn(form, error);
+  } finally {
+    delete form.dataset.busy;
+    if (submit) submit.disabled = false;
+  }
+});
+document.addEventListener('input', (e) => {
+  if (e.target.closest('#publish-form')) dirty = true;
+});
+document.addEventListener('change', async (e) => {
+  if (e.target.id === 'show-needs') {
+    state.showNeeds = e.target.checked;
+    await render();
+  }
+  const name = e.target.name;
+  if (name === 'booking-status') {
+    state.bookingStatus = e.target.value;
+    await render();
+  }
+  if (name === 'ledger-type') {
+    state.ledgerType = e.target.value;
+    await render();
+  }
+  if (name === 'ledger-date') {
+    state.ledgerDate = e.target.value;
+    await render();
+  }
+});
+window.addEventListener('beforeunload', (e) => {
+  if (dirty) {
+    e.preventDefault();
+    e.returnValue = '';
+  }
+});
+window.addEventListener('hashchange', async () => {
+  if (dirty && !confirm('当前修改尚未保存，确认离开？')) {
+    history.replaceState(null, '', lastRoute);
+    return;
+  }
+  state.scroll.set(lastRoute, window.scrollY);
+  lastRoute = location.hash;
+  dialog.close();
+  await render();
+  window.scrollTo(0, state.scroll.get(lastRoute) || 0);
+});
+async function boot() {
+  try {
+    [state.config, { user: state.user, csrf: state.csrf }] = await Promise.all([api('/config'), api('/me')]);
+    state.bankTab = requester() ? 'ledger' : 'offers';
+    await render();
+  } catch (e) {
+    root.innerHTML = `<main class="setup-page">${empty('连接暂时不可用', e.message)}${btn('重试', 'refresh', '', 'primary')}</main>`;
+  }
+}
 await boot();
