@@ -66,7 +66,8 @@ export async function api(request, response, url, ctx) {
     check(
       !origin ||
         origin ===
-          (ctx.origin || `${environment === 'production' ? 'https' : 'http'}://${request.headers.host}`),
+          (ctx.origin || `${environment === 'production' ? 'https' : 'http'}://${request.headers.host}`) ||
+        (environment === 'development' && origin === `http://${request.headers.host}`),
       '请求来源不受信任',
       403,
     );

@@ -1,4 +1,5 @@
 import { baiduMap } from './baidu-map.js';
+import { requestId } from './request-id.js';
 import { mapSheet } from './map-sheet.js';
 import { mapContent, availableNeeds } from './map-ui.js';
 import {
@@ -84,7 +85,7 @@ async function api(path, method = 'GET', body, idempotencyKey) {
     headers: {
       ...(body ? { 'Content-Type': 'application/json' } : {}),
       ...(state.csrf ? { 'X-CSRF-Token': state.csrf } : {}),
-      ...(body && method !== 'GET' ? { 'Idempotency-Key': idempotencyKey || crypto.randomUUID() } : {}),
+      ...(body && method !== 'GET' ? { 'Idempotency-Key': idempotencyKey || requestId() } : {}),
     },
     ...(body ? { body: JSON.stringify(body) } : {}),
   });
@@ -477,7 +478,7 @@ async function savePublication(mode) {
   const old=state.editTask;
   const body={...publicationData(form), kind:old?.kind || current().split('/')[1] || 'help', status:old && old.status !== 'draft' ? old.status : mode, revision:old?.revision};
   const fingerprint=JSON.stringify(body);
-  if (publicationAttempt?.fingerprint !== fingerprint) publicationAttempt={fingerprint,key:crypto.randomUUID()};
+  if (publicationAttempt?.fingerprint !== fingerprint) publicationAttempt={fingerprint,key:requestId()};
   form.dataset.saving='1';
   try {
     const result=await api('/tasks'+(old ? '/'+old.id : ''),old ? 'PUT' : 'POST',body,publicationAttempt.key);

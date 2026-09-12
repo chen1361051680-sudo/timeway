@@ -2,6 +2,8 @@ import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { isIP } from 'node:net';
+import { networkInterfaces } from 'node:os';
+import { listenHost } from './src/listen.mjs';
 import { api, services } from './src/http.mjs';
 import { publicAssets, assetTypes } from './src/assets.mjs';
 export function createTimewayServer(options = {}) {
@@ -12,6 +14,7 @@ export function createTimewayServer(options = {}) {
   // Keep this compatibility exception out of production HTTPS responses.
   const localMapScripts = ctx.environment === 'production' ? '' : ' http://api.map.baidu.com';
   const localMapTiles = ctx.environment === 'production' ? '' : ' http://apimaponline0.bdimg.com http://apimaponline1.bdimg.com http://apimaponline2.bdimg.com http://apimaponline3.bdimg.com';
+  const upgradeRequests = ctx.environment === 'production' ? 'upgrade-insecure-requests; ' : '';
   const server = createServer(async (req, res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
@@ -19,7 +22,7 @@ export function createTimewayServer(options = {}) {
     res.setHeader(
       'Content-Security-Policy',
       ctx.adapters.status.map === 'baidu'
-        ? `upgrade-insecure-requests; default-src 'self'; script-src 'self' 'unsafe-eval'${localMapScripts} https://api.map.baidu.com https://*.bdimg.com https://dlswbr.baidu.com https://map.baidu.com; style-src 'self' 'unsafe-inline' https://api.map.baidu.com https://*.map.bdimg.com; img-src 'self' data: blob: https://miao.baidu.com https://*.bdimg.com https://*.map.baidu.com https://map.baidu.com https://*.bdstatic.com; connect-src 'self'${localMapTiles} https://miao.baidu.com https://*.map.baidu.com https://map.baidu.com https://*.bdimg.com https://*.bdstatic.com; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'`
+        ? `${upgradeRequests}default-src 'self'; script-src 'self' 'unsafe-eval'${localMapScripts} https://api.map.baidu.com https://*.bdimg.com https://dlswbr.baidu.com https://map.baidu.com; style-src 'self' 'unsafe-inline' https://api.map.baidu.com https://*.map.bdimg.com; img-src 'self' data: blob: https://miao.baidu.com https://*.bdimg.com https://*.map.baidu.com https://map.baidu.com https://*.bdstatic.com; connect-src 'self'${localMapTiles} https://miao.baidu.com https://*.map.baidu.com https://map.baidu.com https://*.bdimg.com https://*.bdstatic.com; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'`
         : "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'",
     );
     try {
@@ -100,9 +103,16 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const port = Number(process.env.PORT || 4312);
   if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error('Invalid PORT');
   const server = createTimewayServer({ version: process.env.APP_VERSION || 'development' });
-  server.listen(port, '127.0.0.1', () =>
-    console.log(`Timeway: http://127.0.0.1:${port} (${server.context.environment})`),
-  );
+  const host = listenHost(server.context.environment, process.env.BIND_HOST);
+  server.listen(port, host, () => {
+    console.log(`Timeway: http://${host === '0.0.0.0' ? '127.0.0.1' : host.includes(':') ? `[${host}]` : host}:${port} (${server.context.environment})`);
+    if (host === '0.0.0.0') {
+      for (const addresses of Object.values(networkInterfaces()))
+        for (const address of addresses || [])
+          if (address.family === 'IPv4' && !address.internal)
+            console.log(`局域网: http://${address.address}:${port}`);
+    }
+  });
   server.on('error', (e) => {
     console.error(e.message);
     process.exitCode = 1;
