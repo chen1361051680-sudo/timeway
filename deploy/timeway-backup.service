@@ -3,8 +3,8 @@ Description=Consistent SQLite backup for Timeway
 
 [Service]
 Type=oneshot
-User=www
-Group=www
+User=root
+Group=root
 WorkingDirectory=/www/wwwroot/timeway
 Environment=NODE_ENV=production
 Environment=DATABASE_PATH=/www/wwwroot/timeway/data/production.sqlite
