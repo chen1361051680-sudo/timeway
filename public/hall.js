@@ -51,7 +51,7 @@ export function hallCard(t) {
         confirmed: '查看成果',
       }[t.application?.status] || '查看详情';
   return `<a class="hall-card" href="#task/${esc(t.id)}">
-    <div class="hall-picture"><img src="/images/hall-${art}.png" alt="" width="1024" height="1024" loading="lazy"><span class="hall-category ${color}">${esc(category)}</span></div>
+    <div class="hall-picture"><img src="/images/hall-${art}.webp" alt="" width="1024" height="1024" loading="lazy"><span class="hall-category ${color}">${esc(category)}</span></div>
     <div class="hall-card-content">
       <div class="hall-card-heading"><h3>${esc(t.title)}</h3>${t.application ? status(t.application.status) : `<span class="hall-vacancy">还需 <strong>${t.remaining}</strong> 人</span>`}</div>
       <p class="hall-org" title="${esc(t.orgName)}">${icon('home')}<span>${esc(t.orgName)}</span></p>

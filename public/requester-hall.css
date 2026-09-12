@@ -14,7 +14,7 @@
   position: relative;
   height: 19cqw;
   padding: 2.25cqw 4.7cqw 0;
-  background: #d7efff url('/images/requester-hall-header.png') center 63% / cover no-repeat;
+  background: #d7efff url('/images/requester-hall-header.webp') center 63% / cover no-repeat;
 }
 .requester-hall-header h1 {
   margin: 0;
@@ -183,7 +183,7 @@
   height: 22.4cqw;
   overflow: hidden;
   border-radius: 1.4cqw;
-  background-image: url('/images/requester-hall-reference.png');
+  background-image: url('/images/requester-hall-reference.webp');
   background-size: 100cqw auto;
   background-position-x: -5cqw;
   background-repeat: no-repeat;

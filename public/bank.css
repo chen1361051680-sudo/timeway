@@ -17,7 +17,7 @@
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  background: #f3e3cf url('/images/bank-header.png') center top / 100% auto no-repeat;
+  background: #f3e3cf url('/images/bank-header.webp') center top / 100% auto no-repeat;
 }
 .bank-header h1 {
   margin: 0;

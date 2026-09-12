@@ -134,7 +134,7 @@ export function volunteerProfile(user, summary, bank) {
   </header>
   <div class="profile-body">
     <section class="profile-card profile-identity" aria-label="个人资料">
-      <img class="profile-photo" src="/images/profile-avatar.png" width="148" height="148" alt="志愿者默认头像">
+      <img class="profile-photo" src="/images/profile-avatar.webp" width="148" height="148" alt="志愿者默认头像">
       <div class="profile-identity-content"><div class="profile-name-row"><h2>${esc(user.name)}</h2><span class="profile-role">${profileIcon('user')}志愿者</span>${btn(`编辑资料 ${icon('arrow')}`, 'edit-profile', '', 'profile-edit')}</div>
       <p>${icon('pin')}<span>常用服务区域：${esc(user.region || '待完善')}</span></p>
       <p>${icon('tag')}<span>擅长的服务：${esc(user.skills || '待完善')}</span></p></div>

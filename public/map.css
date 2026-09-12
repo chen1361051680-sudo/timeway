@@ -19,7 +19,7 @@
   flex-direction: column;
 }
 .map-hero {
-  background: #bde8ff url('/map-landscape.png') center top / 100% 100% no-repeat;
+  background: #bde8ff url('/map-landscape.webp') center top / 100% 100% no-repeat;
 }
 .has-baidu-map .map-hero {
   background: #eff9fe;

@@ -49,7 +49,7 @@ function needCard(t, isRequester) {
             ? '查看详情并报名'
             : '查看服务详情';
   return `<article class="map-task-card" data-task-id="${esc(t.id)}">
-    <img class="map-task-image" src="/map-service.png" width="128" height="128" alt="志愿者陪伴长者的主题插画">
+    <img class="map-task-image" src="/map-service.webp" width="128" height="128" alt="志愿者陪伴长者的主题插画">
     <div class="map-task-heading"><h3>${esc(t.title)}</h3><p>${icon('building')}<span>${esc(t.orgName)}</span></p></div>
     ${link(`${label}${icon('arrow')}`, 'task/' + t.id, 'map-task-cta')}
     <div class="map-task-meta"><span>${icon('calendar')}${esc(appointment(t.start))}</span><span>${icon('clock')}${hours(t.minutes)}小时</span><span>${icon('navigation')}到达时间待确认</span></div>
@@ -127,7 +127,7 @@ export function mapContent({ state, data, needs, cells, action, pending }) {
       ${btn('<span></span>', 'collapse', '', 'map-sheet-grab', `aria-label="${state.collapsed ? '展开需求面板' : '收起需求面板'}" aria-expanded="${!state.collapsed}" aria-controls="map-action" title="上下拖动，展开或收起需求面板"`)}
       <div class="map-summary-banner">
         <div class="map-summary-intro">
-          <span class="map-summary-avatar" aria-hidden="true"><img src="/map-service.png" alt="" width="80" height="80"></span>
+          <span class="map-summary-avatar" aria-hidden="true"><img src="/map-service.webp" alt="" width="80" height="80"></span>
           <div class="map-summary-copy"><h2>让善意随时发生<span class="map-summary-rays" aria-hidden="true"><i></i><i></i><i></i></span></h2><p>${isRequester ? '一起让身边的需求被看见' : '谢谢你，点亮更多人的生活'}</p></div>
         </div>
         <div class="map-stats">${stat('pin', isRequester ? '本机构点亮' : '已点亮地点', s.places, '个', 'footprints')}${stat('heart', isRequester ? '完成帮扶' : '完成服务', s.services, '次', 'history')}${stat(isRequester ? 'clipboard' : 'clock', isRequester ? '待处理事项' : '累计贡献', isRequester ? pending : hours(s.minutes), isRequester ? '项' : '小时', isRequester ? 'map-todo' : 'map-contribution')}</div>

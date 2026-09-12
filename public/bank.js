@@ -58,7 +58,7 @@ export function bankCard(t, account) {
           : '';
   const insufficient = !unavailable && (account?.available || 0) < t.minutes;
   return `<a class="bank-service-card" href="#task/${esc(t.id)}" aria-label="${esc(t.title)}，查看详情">
-    <img class="bank-service-image" src="/images/hall-${artwork[t.category] || 'companion'}.png" alt="" width="1024" height="1024" loading="lazy">
+    <img class="bank-service-image" src="/images/hall-${artwork[t.category] || 'companion'}.webp" alt="" width="1024" height="1024" loading="lazy">
     <div class="bank-service-content">
       <div class="bank-service-heading"><h3>${esc(t.title)}</h3><span class="bank-cost">需要 <strong>${hours(t.minutes)}</strong> 小时</span></div>
       <p class="bank-service-org">${icon('home')}<span>${esc(t.orgName)}</span></p>

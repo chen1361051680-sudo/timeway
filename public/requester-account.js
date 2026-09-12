@@ -48,7 +48,7 @@ function recordCard(r, pending = false) {
 }
 function offerCard(t) {
   const [art] = serviceArt[t.category] || ['companion'];
-  return `<a class="rb-offer" href="#task/${esc(t.id)}"><img src="/images/hall-${art}.png" alt="" loading="lazy"><div><div class="rb-offer-heading"><h2>${esc(t.title || '未命名草稿')}</h2>${status(t.displayStatus || t.status)}</div><p>${icon('pin')}${esc(t.region)}</p><p>${icon('calendar')}${esc(requesterDate(t.start))}</p><p>所需 ${hours(t.minutes)} 小时 · 剩余 ${t.remaining}/${t.capacity} 名额</p><span class="rb-offer-action">${t.status === 'draft' ? '查看草稿' : '管理服务'}${icon('arrow')}</span></div></a>`;
+  return `<a class="rb-offer" href="#task/${esc(t.id)}"><img src="/images/hall-${art}.webp" alt="" loading="lazy"><div><div class="rb-offer-heading"><h2>${esc(t.title || '未命名草稿')}</h2>${status(t.displayStatus || t.status)}</div><p>${icon('pin')}${esc(t.region)}</p><p>${icon('calendar')}${esc(requesterDate(t.start))}</p><p>所需 ${hours(t.minutes)} 小时 · 剩余 ${t.remaining}/${t.capacity} 名额</p><span class="rb-offer-action">${t.status === 'draft' ? '查看草稿' : '管理服务'}${icon('arrow')}</span></div></a>`;
 }
 function bookingCard(b, orgId) {
   return `<a class="rb-booking" href="#booking/${esc(b.id)}"><div class="rb-offer-heading"><h2>${esc(b.title)}</h2>${status(b.status)}</div><p>${icon('user')}申请人：${esc(b.applicant)}</p><p>${icon('calendar')}${esc(requesterDate(b.start))}</p><div class="rb-booking-bottom"><span>${b.status === 'completed' ? `已兑换 ${hours(b.charged)} 小时` : ['cancelled', 'rejected'].includes(b.status) ? '时间占用已释放' : `预约 ${hours(b.held)} 小时`}</span><span class="ra-outline">${bookingNeedsRequester(b, orgId) ? '去处理' : '查看安排'}${icon('arrow')}</span></div></a>`;

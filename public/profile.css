@@ -14,7 +14,7 @@
   height: 33.6cqw;
   position: relative;
   padding: 5.4cqw 4.3cqw 0;
-  background: #dff0fb url('/images/profile-header.png') center top / 100% auto no-repeat;
+  background: #dff0fb url('/images/profile-header.webp') center top / 100% auto no-repeat;
 }
 .profile-cover::after {
   content: '';

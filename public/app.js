@@ -160,7 +160,7 @@ function summary(s) {
 function login() {
   return `<main class="login-page" aria-labelledby="login-title">
     <header class="login-brand">
-      <img class="login-logo" src="/login-logo.png" alt="时光有路 Logo" width="1374" height="1145" fetchpriority="high">
+      <img class="login-logo" src="/login-logo.webp" alt="时光有路 Logo" width="1374" height="1145" fetchpriority="high">
       <h1 id="login-title">时光有路</h1>
       <p>用时间连接更温暖的社区</p>
     </header>
@@ -178,7 +178,7 @@ function loginForm(role) {
     title,
     `<form id="login-form" class="login-form">
     <div class="login-welcome">
-      <img src="${role === 'requester' ? '/requester-logo.png' : '/login-logo.png'}" width="${role === 'requester' ? '1254' : '1374'}" height="${role === 'requester' ? '1254' : '1145'}" alt="${role === 'requester' ? '伸出手掌与爱心对话气泡，表达需要帮助' : ''}">
+      <img src="${role === 'requester' ? '/requester-logo.webp' : '/login-logo.webp'}" width="${role === 'requester' ? '1254' : '1374'}" height="${role === 'requester' ? '1254' : '1145'}" alt="${role === 'requester' ? '伸出手掌与爱心对话气泡，表达需要帮助' : ''}">
       <h3>${role === 'volunteer' ? '把时间，变成温暖' : '让善意，在这里相遇'}</h3>
       <p>${role === 'volunteer' ? '从一次陪伴开始，留下你的爱心足迹' : '连接社区需求，让每一份帮助有所归处'}</p>
     </div>

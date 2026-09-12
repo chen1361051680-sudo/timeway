@@ -905,7 +905,7 @@ dialog.login-dialog {
   margin: auto;
   padding: calc(clamp(48px, 8svh, 84px) + env(safe-area-inset-top)) 24px
     calc(86px + env(safe-area-inset-bottom));
-  background: #dceef9 url('/login-background.png') center / cover no-repeat;
+  background: #dceef9 url('/login-background.webp') center / cover no-repeat;
   display: flex;
   flex-direction: column;
   gap: 64px;

@@ -244,7 +244,7 @@ function picture(t) {
   // All text, counters, controls and layout remain live HTML.
   return art
     ? `<span class="requester-picture ${art}" aria-hidden="true"></span>`
-    : `<span class="requester-picture fallback" aria-hidden="true"><img src="/images/hall-companion.png" alt="" loading="lazy"></span>`;
+    : `<span class="requester-picture fallback" aria-hidden="true"><img src="/images/hall-companion.webp" alt="" loading="lazy"></span>`;
 }
 function badge(label, color, glyph) {
   return `<span class="requester-badge ${color}">${requesterIcon(glyph)}${esc(label)}</span>`;
