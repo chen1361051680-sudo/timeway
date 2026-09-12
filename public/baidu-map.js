@@ -1,5 +1,6 @@
 import { esc, icon } from './ui.js';
 import { gridGeometry, validPoint } from './map-geo.js';
+import { locationAccessMessage } from './location-access.js';
 
 let sdkPromise;
 const delayResult = (work, message, ms = 12000) =>
@@ -299,6 +300,8 @@ class LoveMap {
     this.map.addOverlay(this.searchMarker);
   }
   async locate() {
+    const unavailable = locationAccessMessage();
+    if (unavailable) throw new Error(unavailable);
     await this.ready();
     if (!navigator.geolocation) throw new Error('此浏览器不支持定位，请手动搜索所在位置。');
     // No IP approximation: a denied GPS request must not appear as an exact user location.

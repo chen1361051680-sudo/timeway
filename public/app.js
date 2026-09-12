@@ -1,5 +1,6 @@
 import { baiduMap } from './baidu-map.js';
 import { requestId } from './request-id.js';
+import { locationAccessMessage } from './location-access.js';
 import { mapSheet } from './map-sheet.js';
 import { mapContent, availableNeeds } from './map-ui.js';
 import {
@@ -1107,6 +1108,13 @@ async function onAction(action, id, button) {
     if (state.mapLocating) return;
     const automatic = action === 'map-auto-locate';
     const updateRegion = action !== 'map-locate';
+    const unavailable = locationAccessMessage();
+    if (state.config?.map?.provider === 'baidu' && unavailable) {
+      state.mapAutoLocateAttempted = true;
+      if (automatic) return;
+      return modal('定位提示', '<p>' + esc(unavailable) + '</p><div class="actions">' +
+        btn(updateRegion ? '手动选择地区' : '手动搜索位置', updateRegion ? 'city' : 'map-search') + '</div>');
+    }
     if (state.config?.map?.provider === 'baidu') {
       if (!automatic) dialog.close();
       state.mapAutoLocateAttempted = true;

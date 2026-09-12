@@ -1,6 +1,7 @@
 import { loadBaiduMap } from './baidu-map.js';
 import { esc, icon } from './ui.js';
 import { validPoint } from './map-geo.js';
+import { locationAccessMessage } from './location-access.js';
 
 const bounded = (work, message, ms = 12000) =>
   new Promise((resolve, reject) => {
@@ -237,6 +238,8 @@ export async function choosePlace({ config, place, region, query = '', onChoose 
     try {
       if (action === 'retry') await initialize();
       if (action === 'locate') {
+        const unavailable = locationAccessMessage();
+        if (unavailable) throw new Error(unavailable);
         if (!map) throw new Error('地图尚未就绪，可搜索地址或手动填写');
         if (!navigator.geolocation) throw new Error('浏览器不支持定位，请搜索服务地点');
         const token = ++generation;
