@@ -4,8 +4,8 @@ import { resolve } from 'node:path';
 import { existsSync } from 'node:fs';
 if (existsSync('.env')) process.loadEnvFile('.env');
 const demoMode = process.env.NODE_ENV === 'production' && process.env.DEMO_MODE === 'true';
-const environment = demoMode ? 'demo' : process.env.NODE_ENV || 'development';
-const source = resolve(demoMode ? process.env.DEMO_DATABASE_PATH || 'data/demo.sqlite' : process.env.DATABASE_PATH || `data/${environment}.sqlite`),
+const environment = demoMode ? 'development' : process.env.NODE_ENV || 'development';
+const source = resolve(process.env.DATABASE_PATH || `data/${environment}.sqlite`),
   directory = resolve(process.env.BACKUP_DIR || 'backups');
 await access(source);
 await mkdir(directory, { recursive: true });

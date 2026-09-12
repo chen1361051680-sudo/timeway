@@ -24,7 +24,7 @@ export class Auth {
     this.s = store;
     this.environment = environment;
     this.demoMode = demoMode;
-    if (demoMode) check(store.db.prepare('SELECT value FROM metadata WHERE key=?').get('environment')?.value === 'demo', '模拟登录不能连接生产数据库');
+    if (demoMode) check(store.db.prepare('SELECT value FROM metadata WHERE key=?').get('environment')?.value === 'development', '手机模拟测试需使用开发数据库');
   }
   demoConfig() {
     if (!['development', 'test'].includes(this.environment) && !this.demoMode) return null;

@@ -13,14 +13,13 @@ export function services(options = {}) {
     'NODE_ENV 必须为 development、test 或 production',
   );
   const demoMode = environment === 'production' && (options.demoMode ?? process.env.DEMO_MODE === 'true');
-  const productionPath = options.databasePath || process.env.DATABASE_PATH || `./data/${environment}.sqlite`;
-  const databasePath = demoMode ? options.demoDatabasePath || process.env.DEMO_DATABASE_PATH || './data/demo.sqlite' : productionPath;
-  check(!demoMode || resolve(databasePath) !== resolve(productionPath), '手机测试必须使用独立数据库');
+  const databaseEnvironment = demoMode ? 'development' : environment;
+  const databasePath = options.databasePath || process.env.DATABASE_PATH || `./data/${databaseEnvironment}.sqlite`;
   const store =
     options.store ||
     new Store(
       databasePath,
-      demoMode ? 'demo' : environment,
+      databaseEnvironment,
     );
   const adapters = externalAdapters({
     environment,
@@ -38,7 +37,7 @@ export function services(options = {}) {
     environment,
     demoMode,
     origin: options.origin || process.env.PUBLIC_ORIGIN,
-    uploads: resolve(`./data/${environment}-uploads`),
+    uploads: resolve(`./data/${databaseEnvironment}-uploads`),
   };
 }
 async function bodyOf(request) {
