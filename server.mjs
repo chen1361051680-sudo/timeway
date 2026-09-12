@@ -10,9 +10,10 @@ export function createTimewayServer(options = {}) {
   const ctx = services(options),
     version = options.version || 'development',
     limits = new Map();
-  // Baidu's blob workers derive HTTP tile URLs from local HTTP pages.
+  // On local HTTP pages the SDK uses HTTP for its styles, images and tile workers.
   // Keep this compatibility exception out of production HTTPS responses.
-  const localMapScripts = ctx.environment === 'production' ? '' : ' http://api.map.baidu.com';
+  const localMapScripts = ctx.environment === 'production' ? '' : ' http://api.map.baidu.com http://dlswbr.baidu.com/heicha/mw/ http://maponline0.bdimg.com/sty/';
+  const localMapImages = ctx.environment === 'production' ? '' : ' http://webmap0.bdimg.com/image/api/ http://api.map.baidu.com/images/ http://maponline0.bdimg.com/sty/';
   const localMapTiles = ctx.environment === 'production' ? '' : ' http://apimaponline0.bdimg.com http://apimaponline1.bdimg.com http://apimaponline2.bdimg.com http://apimaponline3.bdimg.com';
   const upgradeRequests = ctx.environment === 'production' ? 'upgrade-insecure-requests; ' : '';
   const server = createServer(async (req, res) => {
@@ -22,7 +23,7 @@ export function createTimewayServer(options = {}) {
     res.setHeader(
       'Content-Security-Policy',
       ctx.adapters.status.map === 'baidu'
-        ? `${upgradeRequests}default-src 'self'; script-src 'self' 'unsafe-eval'${localMapScripts} https://api.map.baidu.com https://*.bdimg.com https://dlswbr.baidu.com https://map.baidu.com; style-src 'self' 'unsafe-inline' https://api.map.baidu.com https://*.map.bdimg.com; img-src 'self' data: blob: https://miao.baidu.com https://*.bdimg.com https://*.map.baidu.com https://map.baidu.com https://*.bdstatic.com; connect-src 'self'${localMapTiles} https://miao.baidu.com https://*.map.baidu.com https://map.baidu.com https://*.bdimg.com https://*.bdstatic.com; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'`
+        ? `${upgradeRequests}default-src 'self'; script-src 'self' 'unsafe-eval'${localMapScripts} https://api.map.baidu.com https://*.bdimg.com https://dlswbr.baidu.com https://map.baidu.com; style-src 'self' 'unsafe-inline' https://api.map.baidu.com https://*.map.bdimg.com; img-src 'self' data: blob:${localMapImages} https://miao.baidu.com https://*.bdimg.com https://*.map.baidu.com https://map.baidu.com https://*.bdstatic.com; connect-src 'self'${localMapTiles} https://miao.baidu.com https://*.map.baidu.com https://map.baidu.com https://*.bdimg.com https://*.bdstatic.com; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'`
         : "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'",
     );
     try {

@@ -1111,7 +1111,11 @@ async function onAction(action, id, button) {
     const unavailable = locationAccessMessage();
     if (state.config?.map?.provider === 'baidu' && unavailable) {
       state.mapAutoLocateAttempted = true;
-      if (automatic) return;
+      if (automatic) {
+        const label = document.querySelector('.map-region-label');
+        if (label && !state.city) label.textContent = '点击定位';
+        return;
+      }
       return modal('定位提示', '<p>' + esc(unavailable) + '</p><div class="actions">' +
         btn(updateRegion ? '手动选择地区' : '手动搜索位置', updateRegion ? 'city' : 'map-search') + '</div>');
     }
