@@ -12,6 +12,11 @@
     "test": "node --test test/*.test.mjs",
     "build": "node scripts/build.mjs",
     "test:ui": "node e2e/mobile.mjs",
+    "test:map": "node e2e/map.mjs",
+    "test:hall": "node e2e/hall.mjs",
+    "test:requester-hall": "node e2e/requester-hall.mjs",
+    "test:profile": "node e2e/profile.mjs",
+    "test:bank": "node e2e/bank.mjs",
     "backup": "node scripts/backup.mjs",
     "seed": "node scripts/seed.mjs"
   },

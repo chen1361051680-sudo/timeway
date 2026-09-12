@@ -1,6 +1,10 @@
+import { baiduMap } from './baidu-map.js';
+import { mapSheet } from './map-sheet.js';
+import { mapContent, availableNeeds } from './map-ui.js';
 import {
   esc,
   icon,
+  navIcon,
   dateTime,
   localTime,
   hours,
@@ -15,6 +19,10 @@ import {
   taskCard,
   bookingCard,
 } from './ui.js';
+import { hallContent, hallCategories } from './hall.js';
+import { requesterHall } from './requester-hall.js';
+import { volunteerProfile, profileEditor, accountSettings } from './profile.js';
+import { bankContent, bankAccount, bankLedger } from './bank.js';
 
 const root = document.querySelector('#app'),
   dialog = document.querySelector('#dialog');
@@ -24,9 +32,17 @@ const state = {
   config: null,
   tab: 'discover',
   bankTab: 'offers',
+  bankFilter: {},
+  bankInitialized: false,
+  bankLedgerFilter: {},
   filter: {},
+  requesterStatus: '',
+  requesterTodoFilter: '',
   mapScope: 'all',
-  city: '',
+  city: null,
+  mapRegion: null,
+  mapLocating: false,
+  mapAutoLocateAttempted: false,
   showNeeds: true,
   collapsed: false,
   scroll: new Map(),
@@ -69,7 +85,7 @@ async function api(path, method = 'GET', body) {
   });
   const result = await response.json();
   if (!response.ok) {
-    if (response.status === 401) {
+    if (response.status === 401 && !path.startsWith('/auth/')) {
       state.user = null;
       go('login');
     }
@@ -81,11 +97,11 @@ function tabs(items, active, action) {
   return `<div class="tabs" role="tablist">${items.map(([id, title]) => btn(esc(title), action, id, active === id ? 'tab active' : 'tab', `role="tab" aria-selected="${active === id}"`)).join('')}</div>`;
 }
 function header(title, back = false) {
-  return `<header class="page-head">${back ? btn(icon('back'), 'back', '', 'icon-button', 'aria-label="返回"') : ''}<h1>${esc(title)}</h1>${btn(icon('bell'), 'notices', '', 'icon-button', 'aria-label="消息通知"')}</header>`;
+  return `<header class="page-head">${back ? btn(icon('back'), 'back', '', 'icon-button', 'aria-label="返回"') : ''}<h1>${esc(title)}</h1></header>`;
 }
-function shell(content, tab = 'map', title = '', back = false) {
+function shell(content, tab = 'map', title = '', back = false, variant = '') {
   document.documentElement.classList.toggle('large-text', state.user?.settings?.fontSize === 'large');
-  return `<div class="app-shell">${state.config?.environment !== 'production' ? '<div class="dev-banner">开发环境 · 验证码为模拟发送 · 数据与生产隔离</div>' : ''}${title ? header(title, back) : ''}<main>${content}</main><nav class="bottom-nav" aria-label="主导航">${[
+  return `<div class="app-shell ${variant}">${state.config?.environment !== 'production' && !variant && !requester() ? '<div class="dev-banner">模拟体验 · 当前使用模拟账号 · 数据与生产隔离</div>' : ''}${title ? header(title, back) : ''}<main>${content}</main><nav class="bottom-nav" aria-label="主导航">${[
     ['map', 'map', '爱心地图'],
     ['services', 'grid', '服务大厅'],
     ['bank', 'clock', '时间银行'],
@@ -93,14 +109,31 @@ function shell(content, tab = 'map', title = '', back = false) {
   ]
     .map(
       ([id, i, label]) =>
-        `<a href="#${id}" class="${tab === id ? 'active' : ''}" ${tab === id ? 'aria-current="page"' : ''}>${icon(i)}<span>${label}</span></a>`,
+        `<a href="#${id}" class="${tab === id ? 'active' : ''}" ${tab === id ? 'aria-current="page"' : ''}>${navIcon(i)}<span>${label}</span></a>`,
     )
     .join('')}</nav></div>`;
 }
-function modal(title, html, onSubmit, label = '确认') {
-  dialog.innerHTML = `<div class="modal-head"><h2 id="dialog-title">${esc(title)}</h2>${btn(icon('close'), 'close', '', 'icon-button', 'aria-label="关闭弹窗"')}</div>${onSubmit ? `<form id="modal-form">${html}<p class="form-error" role="alert"></p><button class="primary wide" type="submit">${esc(label)}</button></form>` : html}`;
+function modal(title, html, onSubmit, label = '确认', accountStyle = false) {
+  if (!mayDiscardProfileForm()) return;
+  dialog.classList.remove('login-dialog');
+  dialog.classList.toggle('account-dialog', accountStyle);
+  dialog.innerHTML = `<div class="modal-head"><h2 id="dialog-title">${esc(title)}</h2>${btn(icon('close'), 'close', '', 'icon-button', 'aria-label="关闭弹窗"')}</div>${onSubmit ? `<form id="modal-form">${accountStyle ? '<div class="account-body">' + html + '</div><div class="account-footer">' : html}<p class="form-error" role="alert"></p><button class="primary wide" type="submit">${esc(label)}</button>${accountStyle ? '</div>' : ''}</form>` : html}`;
   modalSubmit = onSubmit;
+  const guarded = accountStyle || ['维护资料', '账户与显示设置'].includes(title);
+  dialog.dataset.profileSnapshot = guarded ? JSON.stringify(formData(dialog.querySelector('form'))) : '';
   if (!dialog.open) dialog.showModal();
+}
+function profileFormChanged() {
+  const form = dialog.querySelector('form');
+  return (
+    dialog.open &&
+    dialog.dataset.profileSnapshot &&
+    form &&
+    dialog.dataset.profileSnapshot !== JSON.stringify(formData(form))
+  );
+}
+function mayDiscardProfileForm() {
+  return !profileFormChanged() || confirm('当前修改尚未保存，确认放弃修改？');
 }
 function formData(form) {
   return Object.fromEntries(new FormData(form));
@@ -125,45 +158,117 @@ function summary(s) {
   return `<div class="stats">${btn(`<strong>${s.places}</strong><span>已点亮地点</span>`, 'footprints', '', 'stat')}${btn(`<strong>${s.services}</strong><span>完成服务</span>`, 'history', '', 'stat')}${link(`<strong>${hours(s.minutes)}</strong><span>贡献小时</span>`, 'bank', 'stat')}</div>`;
 }
 function login() {
-  return `<main class="login-page"><div class="login-symbol">${icon('heart')}</div><p class="eyebrow">TIMEWAY · 时光有路</p><h1>让每一份善意<br>都有路可循。</h1><p class="muted">参与一次陪伴，留下一个温暖的足迹。</p><form id="login-form" class="card"><h2>欢迎加入时光有路</h2>${field('phone', '手机号码', '', 'tel', true, 'inputmode="tel" autocomplete="tel" pattern="1[0-9]{10}" maxlength="11"')}<div class="code-row">${field('code', '验证码', '', 'text', true, 'inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6"')}${btn('获取验证码', 'code', '', 'secondary')}</div><p id="code-info" class="notice"></p><label class="check-row"><input name="agreed" type="checkbox" required>我已阅读并同意 ${btn('使用说明与隐私约定', 'terms', '', 'text-button')}</label><p class="form-error" role="alert"></p><button type="submit" name="role" value="volunteer" class="primary wide">我是志愿者 ${icon('arrow')}</button><button type="submit" name="role" value="requester" class="secondary wide">我是需求方（社区／机构）</button><small>首次登录将注册所选身份；同一手机号对应一个角色。</small></form>${state.config?.environment !== 'production' ? '<p class="dev-banner">当前为开发环境，获取验证码后会在页面显示模拟验证码。不会发送真实短信。</p>' : ''}</main>`;
+  return `<main class="login-page" aria-labelledby="login-title">
+    <header class="login-brand">
+      <img class="login-logo" src="/login-logo.png" alt="时光有路 Logo" width="1374" height="1145" fetchpriority="high">
+      <h1 id="login-title">时光有路</h1>
+      <p>用时间连接更温暖的社区</p>
+    </header>
+    <div class="login-entries" aria-label="选择登录身份">
+      ${btn(`<span class="login-entry-icon">${icon('user-filled')}</span><span class="login-entry-label">志愿者登录</span>${icon('arrow')}`, 'login-role', 'volunteer', 'login-entry login-entry-volunteer', 'aria-label="志愿者登录"')}
+      ${btn(`<span class="login-entry-icon">${icon('users-filled')}</span><span class="login-entry-label">需求方登录<small>（社区、机构等）</small></span>${icon('arrow')}`, 'login-role', 'requester', 'login-entry login-entry-requester', 'aria-label="需求方登录（社区、机构等）"')}
+    </div>
+  </main>`;
+}
+function loginForm(role) {
+  const title = role === 'requester' ? '需求方登录' : '志愿者登录';
+  const demo = state.config?.demoAccounts?.[role];
+  if (!demo) return modal(title, '<p class="notice">当前环境不开放模拟账号登录。</p>');
+  modal(
+    title,
+    `<form id="login-form" class="login-form">
+    <div class="login-welcome">
+      <img src="${role === 'requester' ? '/requester-logo.png' : '/login-logo.png'}" width="${role === 'requester' ? '1254' : '1374'}" height="${role === 'requester' ? '1254' : '1145'}" alt="${role === 'requester' ? '伸出手掌与爱心对话气泡，表达需要帮助' : ''}">
+      <h3>${role === 'volunteer' ? '把时间，变成温暖' : '让善意，在这里相遇'}</h3>
+      <p>${role === 'volunteer' ? '从一次陪伴开始，留下你的爱心足迹' : '连接社区需求，让每一份帮助有所归处'}</p>
+    </div>
+    <p class="login-help">为方便使用，请提供一键登录按钮及模拟账号登录。请点击下方登录按钮正常使用。</p>
+    <input type="hidden" name="role" value="${role}">
+    <p class="form-error" role="alert"></p>
+    <button type="submit" class="login-submit" aria-label="一键快速登录（模拟账号）"><span>一键快速登录<small>（模拟账号）</small></span>${icon('arrow')}</button>
+    <p class="login-signoff">时光有路 · 用时间连接更温暖的社区</p>
+  </form>`,
+  );
+  dialog.classList.add('login-dialog');
+}
+function termsContent() {
+  return `<p>时光有路连接社区助老需求与志愿者。当前仅有需求方和志愿者两个身份。</p><p>当前使用模拟账号登录。个人资料、联系信息和服务材料仅供相关参与者处理本次服务。公共成果只展示概略区域与匿名统计。</p><p>时间权益来自机构核实的实际服务，不是现金，按发放机构分别兑换。未提供的兑换服务取消后释放占用，争议由双方通过关联记录沟通并核实。</p><p>请取得受助者同意，避免上传不必要的身份、医疗或其他敏感材料。可通过任务留言申请资料更正，个人资料可在“我的”维护。</p><p>地图、短信、文件存储的真实接入以当前环境说明为准。</p>`;
 }
 function profileFields() {
   const u = state.user;
-  return `${field('name', requester() ? '机构名称' : '姓名', u.name)}${field('region', '常用服务区域', u.region)}${requester() ? field('contact', '机构联系人', u.contact) + field('address', '机构地址', u.address) : field('skills', '擅长服务', u.skills, 'textarea', false)}<p class="muted">手机号：${esc(u.phone)} · 身份：${requester() ? '需求方' : '志愿者'}</p>`;
+  return `${field('name', requester() ? '机构名称' : '姓名', u.name, 'text', true, 'maxlength="80"')}${field('contactPhone', '联系电话', u.contactPhone || u.phone, 'tel', true, 'maxlength="30"')}${field('region', '常用服务区域', u.region, 'text', true, 'maxlength="100"')}${requester() ? field('contact', '机构联系人', u.contact) + field('address', '机构地址', u.address) : field('skills', '擅长服务', u.skills, 'textarea', false, 'maxlength="200"')}<p class="muted">账号手机号：${esc(u.phone)} · 身份：${requester() ? '需求方' : '志愿者'}</p>`;
 }
 function completeProfile() {
   return `<main class="setup-page"><h1>完善${requester() ? '机构' : '个人'}资料</h1><p>让${requester() ? '志愿者认识你的机构' : '社区了解你的服务意愿'}。</p><form id="profile-form" class="card">${profileFields()}<p class="form-error" role="alert"></p><button class="primary wide">保存并进入</button></form></main>`;
 }
 
 async function mapPage() {
+  if (state.city === null)
+    state.city = state.user.region?.match(/^(.+?市|杭州|上海|北京|广州|深圳|成都|南京|苏州)/)?.[0] || '';
   const [data, tasks, ownTasks] = await Promise.all([
     api('/map?scope=' + state.mapScope),
-    api('/tasks?kind=help' + (requester() ? '&scope=mine' : '')),
-    requester() ? Promise.resolve([]) : api('/tasks?kind=help&scope=mine'),
+    api(
+      '/tasks?' +
+        new URLSearchParams({ kind: 'help', ...state.filter, ...(requester() ? { scope: 'mine' } : {}) }),
+    ),
+    api('/tasks?kind=help&scope=mine'),
   ]);
   state.mapData = data;
-  const shown = tasks.filter((t) => !state.city || t.region.includes(state.city));
-  const cells = data.cells.filter((c) => !state.city || c.region.includes(state.city));
+  const matchesRegion = (region) => {
+    if (state.mapRegion?.query === state.city) {
+      const { city, district } = state.mapRegion;
+      return (!city || region.includes(city)) && (!district || region.includes(district));
+    }
+    return !state.city || region.includes(state.city);
+  };
+  const shown = tasks.filter((t) => matchesRegion(t.region));
+  const cells = data.cells.filter((c) => matchesRegion(c.region));
   state.cells = cells;
-  const actions = requester()
-    ? shown.filter(
-        (t) => t.newApplicants || t.applications.some((a) => ['submitted', 'disputed'].includes(a.status)),
-      )
-    : [
-        ...new Map(
-          [
-            ...ownTasks.filter((t) =>
-              ['accepted', 'checked_in', 'submitted', 'disputed'].includes(t.application?.status),
-            ),
-            ...shown,
-          ].map((t) => [t.id, t]),
-        ).values(),
-      ];
+  state.mapNeeds = availableNeeds(shown);
+  state.mapOwn = ownTasks;
+  const todo = ownTasks.filter(
+    (t) =>
+      t.newApplicants ||
+      t.hasPendingChange ||
+      t.applications.some((a) => ['submitted', 'disputed'].includes(a.status)),
+  );
+  const ongoing = ownTasks
+    .filter((t) => ['accepted', 'checked_in', 'submitted', 'disputed'].includes(t.application?.status))
+    .sort((a, b) =>
+      a.application.status === 'checked_in'
+        ? -1
+        : b.application.status === 'checked_in'
+          ? 1
+          : a.start.localeCompare(b.start),
+    );
+  const actions = requester() ? todo : [...ongoing, ...state.mapNeeds];
+  const selected = [...state.mapNeeds, ...ownTasks].find((t) => t.id === state.selectedTask);
+  if (!selected) state.selectedTask = null;
+  if (!cells.some((c) => c.cell === state.selectedCell)) state.selectedCell = null;
+  const action = selected || actions[0];
   return shell(
-    `<section class="map-stage"><div class="map-top">${btn(`${esc(state.city || '全部地区')}⌄`, 'city', '', 'city-button')}${btn(icon('bell'), 'notices', '', 'icon-button', 'aria-label="消息通知"')}</div><div class="map-placeholder">${icon('map')}<h1>${state.mapScope === 'mine' ? (requester() ? '本机构的爱心足迹' : '我的爱心足迹') : '爱心地图'}</h1><p>地图接入准备中</p><small>目前按服务区域查看需求与已确认成果<br>不展示模拟定位或虚构地理分布</small></div><div class="map-tools">${btn('筛选', 'map-filter', '', 'secondary')}${btn('手动选择位置', 'city', '', 'secondary')}</div>${state.mapScope === 'mine' ? btn('返回共同地图', 'collective', '', 'text-button') : ''}</section><section class="map-sheet"><div class="between"><div><p class="eyebrow">每一份善意，都有迹可循</p><h2>${requester() ? '一起点亮更多地方' : '从一次力所能及的帮助开始'}</h2></div>${btn(state.collapsed ? '展开' : '收起', 'collapse', '', 'text-button')}</div>${summary(data.summary)}${state.collapsed ? '' : `<div class="between"><h2>已点亮地区 <small>${cells.length} 个网格</small></h2>${btn('生成足迹卡', 'share', '', 'text-button')}</div>${cells.length ? `<div class="light-grid">${cells.map((c, i) => btn(`${icon('heart')}<b>${esc(c.region)}</b><small>${c.count} 次帮扶 · ${c.volunteers} 位志愿者</small>`, 'cell', String(i), 'light-cell brightness-' + c.brightness)).join('')}</div>` : empty('这里的温暖，等你点亮', '经核实的服务且有主要地点坐标，才会点亮一个地方。')}${data.summary.pendingLocation ? `<p class="notice">${data.summary.pendingLocation} 条已核实记录待机构补充地点坐标。时长已计入账户。</p>` : ''}<div class="between"><h2>${requester() ? '当前待办' : '可参与的爱心需求'}</h2><label class="check-row"><input id="show-needs" type="checkbox" ${state.showNeeds ? 'checked' : ''}>显示待帮助</label></div>${state.showNeeds ? (actions.length ? actions.slice(0, 2).map(taskCard).join('') : empty('暂时没有合适需求', '可调整地区筛选，或在服务大厅查看全部安排。')) : ''}${link(requester() ? '发布帮扶需求' : '前往服务大厅', requester() ? 'publish/help' : 'services', 'primary wide')}`}<p class="privacy-note">公共成果仅显示概略区域，不显示老人身份、门牌和电话。</p></section>`,
+    mapContent({
+      state,
+      data,
+      needs: state.mapNeeds,
+      cells,
+      action,
+      pending: todo.reduce(
+        (n, t) =>
+          n +
+          t.newApplicants +
+          Number(t.hasPendingChange) +
+          t.applications.filter((a) => ['submitted', 'disputed'].includes(a.status)).length,
+        0,
+      ),
+    }),
     'map',
+    '',
+    false,
+    'map-shell',
   );
 }
+
 function filters(extra = '') {
   const f = state.filter;
   return `<form id="filter-form" class="filters"><div class="search-row">${field('q', '搜索需求、机构或区域', f.q || '', 'search', false)}<button class="icon-button" aria-label="搜索">${icon('search')}</button></div><details class="filter-options"><summary>类型、日期与时长筛选</summary><div class="filter-grid">${select('category', '服务类型', [['', '全部类型'], ...categories], f.category)}${field('date', '预约日期', f.date || '', 'date', false)}${select(
@@ -180,59 +285,58 @@ function filters(extra = '') {
   )}${extra}</div></details><div class="between"><small>路线待接入，暂按开始时间排序</small>${btn('重置', 'reset-filter', '', 'text-button')}<button class="text-button">应用筛选</button></div></form>`;
 }
 async function servicesPage() {
-  const mine = requester() || state.tab === 'mine';
-  const query = new URLSearchParams({ kind: 'help', ...state.filter, ...(mine ? { scope: 'mine' } : {}) });
-  let tasks = await api('/tasks?' + query);
-  state.list = tasks;
-  if (state.tab === 'todo')
-    tasks = tasks.filter(
-      (t) =>
-        t.newApplicants ||
-        t.hasPendingChange ||
-        t.applications.some((a) => ['submitted', 'disputed'].includes(a.status)),
+  if (!requester()) {
+    const mine = state.tab === 'mine';
+    const query = new URLSearchParams({
+      kind: 'help',
+      sort: 'distance',
+      ...state.filter,
+      ...(mine ? { scope: 'mine' } : { available: '1' }),
+    });
+    const [listed, own] = await Promise.all([api('/tasks?' + query), api('/tasks?kind=help&scope=mine')]);
+    state.ownServices = own;
+    const tasks = state.filter.status ? listed.filter((t) => matchesStatus(t, state.filter.status)) : listed;
+    state.list = tasks;
+    return shell(
+      hallContent({
+        tasks,
+        own,
+        filter: state.filter,
+        mine,
+        environment: state.config?.environment,
+      }),
+      'services',
+      '',
+      false,
+      'volunteer-hall',
     );
-  if (state.filter.status) tasks = tasks.filter((t) => matchesStatus(t, state.filter.status));
+  }
+  const [tasks, notices] = await Promise.all([api('/tasks?kind=help&scope=mine'), api('/notices')]);
+  state.list = tasks;
   return shell(
-    `<div class="page-intro"><p>${requester() ? '把需要帮助的人，与愿意付出的人连接起来。' : '寻找一次力所能及的帮助。'}</p>${requester() ? link(icon('plus') + ' 发布需求', 'publish/help', 'primary') : ''}</div>${tabs(
-      requester()
-        ? [
-            ['discover', '已发布需求'],
-            ['todo', '待办'],
-          ]
-        : [
-            ['discover', '发现需求'],
-            ['mine', '我参与的'],
-          ],
-      state.tab,
-      'service-tab',
-    )}<section class="surface">${filters(
-      mine
-        ? select(
-            'status',
-            '状态',
-            [
-              ['', '全部状态'],
-              ['draft', '草稿'],
-              ['pending', '待处理'],
-              ['active', '进行中'],
-              ['completed', '已完成'],
-              ['other', '其他'],
-            ],
-            state.filter.status,
-          )
-        : '',
-    )}<div class="list">${tasks.length ? tasks.map(taskCard).join('') : empty('暂无符合条件的服务', '调整筛选条件，或稍后再来看一看。')}</div></section>`,
+    requesterHall({
+      tasks,
+      todo: state.tab === 'todo',
+      filter: state.requesterStatus,
+      todoFilter: state.requesterTodoFilter,
+      unread: notices.some((n) => !n.read),
+    }),
     'services',
-    '服务大厅',
+    '',
+    false,
+    'requester-hall',
   );
 }
 function matchesStatus(t, s) {
   const a = t.application;
   if (s === 'draft') return t.status === 'draft';
   if (s === 'pending')
-    return a
-      ? ['pending', 'submitted', 'disputed'].includes(a.status)
-      : t.status === 'published' && t.newApplicants > 0;
+    return (
+      t.hasPendingChange ||
+      (a
+        ? ['pending', 'submitted', 'disputed'].includes(a.status)
+        : t.status === 'published' && t.newApplicants > 0)
+    );
   if (s === 'active')
     return a
       ? ['accepted', 'checked_in'].includes(a.status)
@@ -258,7 +362,38 @@ function recordBlock(r, org) {
 function changeBlock(t, a) {
   if (!t.pending) return '';
   const p = t.pending.proposed;
-  return `<section class="card notice"><h3>服务安排变更待确认</h3><p>${esc(p.title)} · ${dateTime(p.start)} — ${dateTime(p.end)}</p><p>${esc(p.address)} · ${p.minutes} 分钟</p><p class="pre">${esc(p.description)}</p>${t.mine ? `<p>${Object.values(t.pending.answers).filter((x) => x === 'pending').length} 人尚未确认；全部处理后新安排生效。</p>` : a && t.pending.answers[a.id] === 'pending' ? `<div class="actions">${btn('接受新安排', 'accept-change', a.id, 'primary')}${btn('不同意并退出', 'decline-change', a.id)}</div>` : '<p>已记录你的选择，等待其他参与者确认。</p>'}</section>`;
+  return `<section class="card notice requester-task-focus" data-task-section="changes" tabindex="-1"><h3>服务安排变更待确认</h3><p>${esc(p.title)} · ${dateTime(p.start)} — ${dateTime(p.end)}</p><p>${esc(p.address)} · ${p.minutes} 分钟</p><p class="pre">${esc(p.description)}</p>${t.mine ? `<p>${Object.values(t.pending.answers).filter((x) => x === 'pending').length} 人尚未确认；全部处理后新安排生效。</p>` : a && t.pending.answers[a.id] === 'pending' ? `<div class="actions">${btn('接受新安排', 'accept-change', a.id, 'primary')}${btn('不同意并退出', 'decline-change', a.id)}</div>` : '<p>已记录你的选择，等待其他参与者确认。</p>'}</section>`;
+}
+function requesterManagement(t) {
+  const other = t.applications.filter(
+    (a) =>
+      (a.changeRequest && a.status === 'accepted') ||
+      (a.status === 'withdrawn' && a.wasAccepted && !a.withdrawalHandled),
+  );
+  const focus = (name) =>
+    `class="participant requester-task-focus" data-task-section="${name}" tabindex="-1"`;
+  return `${other.length ? `<section class="card" data-task-section="other" tabindex="-1"><h2>其他待处理事项</h2>${other.map((a) => (a.changeRequest ? `<article ${focus('changes')}><h3>${esc(a.volunteer.name)} · 申请调整时间</h3><p>原时间：${dateTime(t.start)} — ${dateTime(t.end)}</p><p>建议时间：${dateTime(a.changeRequest.start)} — ${dateTime(a.changeRequest.end)}</p><p>${esc(a.changeRequest.reason)}</p><div class="actions">${btn('同意调整', 'accept-request-change', a.id, 'primary')}${btn('不通过', 'reject-request-change', a.id)}</div></article>` : `<article ${focus('withdrawals')}><h3>${esc(a.volunteer.name)} · 已退出任务</h3><p>${esc(a.reason)}</p><p>当前已确认 ${t.capacity - t.remaining}/${t.capacity} 人，请联系相关人员并安排补招。</p><div class="actions">${link('调整需求安排', 'publish/' + t.id)}${btn('记录处理结果', 'handle-withdrawal', a.id, 'primary')}</div></article>`)).join('')}</section>` : ''}
+  <section class="card requester-task-focus" data-task-section="management" tabindex="-1"><h2>报名与服务管理</h2>${t.applications.length ? t.applications.map((a) => `<article ${focus(a.status === 'pending' ? 'applications' : a.status === 'disputed' ? 'disputes' : 'records')}><div class="between"><h3>${esc(a.volunteer.name)}</h3>${status(a.status)}</div><p>${esc(a.volunteer.skills || '未填写擅长服务')}</p><p>${esc(a.message || '无报名留言')}</p>${a.reason ? `<p>${esc(a.reason)}</p>` : ''}${a.status === 'pending' ? `<div class="actions">${btn('确认参与', 'accept-app', a.id, 'primary')}${btn('不通过', 'reject-app', a.id)}</div>` : ''}${a.withdrawalHandled ? `<p>退出处理：${esc(a.withdrawalHandled.reason)}</p>` : ''}${a.changeResolution ? `<p>时间调整：${a.changeResolution.action === 'accept-request-change' ? '已同意' : '未通过'} ${esc(a.changeResolution.reason)}</p>` : ''}${recordBlock(a.record, true)}</article>`).join('') : empty('暂时没有人报名', '发布后可在这里确认参与人员。')}</section>`;
+}
+function focusTaskSection() {
+  const [page, , section] = current().split('/');
+  if (
+    page !== 'task' ||
+    !['applications', 'arrangement', 'records', 'other', 'disputes', 'changes', 'withdrawals'].includes(
+      section,
+    )
+  )
+    return;
+  const element =
+    (section === 'records'
+      ? root.querySelector('[data-task-section="records"]:has([data-action="confirm-record"])')
+      : null) ||
+    root.querySelector(`[data-task-section="${section}"]`) ||
+    root.querySelector('[data-task-section="management"]');
+  if (element) {
+    element.focus({ preventScroll: true });
+    element.scrollIntoView({ block: 'start' });
+  }
 }
 async function taskPage(id) {
   const t = await api('/tasks/' + id);
@@ -284,20 +419,35 @@ async function taskPage(id) {
         : (['pending', 'accepted'].includes(a.status) ? btn('退出报名', 'withdraw', a.id) : '') +
           (['accepted', 'checked_in', 'disputed'].includes(a.status) ||
           (a.status === 'cancelled' && a.wasAccepted)
-            ? (a.status === 'accepted' ? btn('到场签到', 'checkin', a.id, 'primary') : '') +
-              btn('提交服务记录', 'submit-record', a.id, 'primary')
+            ? (a.status === 'accepted'
+                ? btn('到场签到', 'checkin', a.id, 'primary') +
+                  (!a.changeRequest && !t.pending ? btn('申请调整时间', 'request-time-change', a.id) : '')
+                : '') + btn('提交服务记录', 'submit-record', a.id, 'primary')
             : '');
   } else if (!requester() && t.kind === 'redeem') {
-    action = btn(
-      '申请兑换',
-      'book',
-      id,
-      'primary',
-      t.status === 'published' && t.remaining ? '' : 'disabled',
+    const bank = await api('/bank');
+    const account = bank.accounts.find((a) => a.orgId === t.owner);
+    const existing = bank.bookings.find(
+      (b) => b.taskId === id && !['cancelled', 'rejected', 'completed'].includes(b.status),
     );
+    const blocked =
+      t.remaining <= 0
+        ? '名额已满'
+        : t.status !== 'published' || t.hasPendingChange
+          ? '暂不可预约'
+          : Date.parse(t.deadline) <= Date.now() || Date.parse(t.start) <= Date.now()
+            ? '预约已截止'
+            : (account?.available || 0) < t.minutes
+              ? '对应机构可用时间不足'
+              : '';
+    action =
+      `<p>本机构可用 ${hours(account?.available)} 小时 · 兑换需要 ${hours(t.minutes)} 小时</p>` +
+      (existing
+        ? link('查看我的兑换安排', `booking/${existing.id}`, 'primary')
+        : btn(blocked || '申请兑换', 'book', id, 'primary', blocked ? 'disabled' : ''));
   }
   return shell(
-    `<section class="card task-hero"><div class="between"><span class="eyebrow">${t.kind === 'help' ? '助老帮扶' : '时间兑换'}</span>${status(a?.status || t.displayStatus || t.status)}</div><h1>${esc(t.title || '未命名草稿')}</h1><p>${esc(t.orgName)} · ${esc(t.category)}</p><div class="chips"><span>${hours(t.minutes)} 小时</span><span>剩余 ${t.remaining} / ${t.capacity} 名额</span></div></section>${changeBlock(t, a)}<section class="card"><h2>服务安排</h2><dl><dt>预约时间</dt><dd>${dateTime(t.start)} — ${dateTime(t.end)}</dd><dt>报名截止</dt><dd>${dateTime(t.deadline)}</dd><dt>服务区域</dt><dd>${esc(t.region)}</dd><dt>详细地址</dt><dd>${esc(t.address || '确认参与后向相关人员展示')}</dd>${t.meeting ? `<dt>集合说明</dt><dd>${esc(t.meeting)}</dd>` : ''}${t.contact ? `<dt>联系机构</dt><dd>${esc(t.contact)} · <a href="tel:${esc(t.phone)}">${esc(t.phone)}</a></dd>` : ''}</dl><div class="actions">${btn('查看到达说明', 'route', id)}${btn('在爱心地图查看', 'view-map', id, 'text-button')}</div></section><section class="card"><h2>需要做什么</h2><p class="pre">${esc(t.description || '暂无说明')}</p><h3>服务要求</h3><p class="pre">${esc(t.requirements || '愿意耐心陪伴，按约定时间参加。')}</p>${t.recipient ? `<h3>受助对象</h3><p>${esc(t.recipient)} · 预计 ${t.recipients} 人次</p>` : ''}${t.cancelReason ? `<p class="notice">取消原因：${esc(t.cancelReason)}</p>` : ''}</section>${t.mine && t.kind === 'help' ? `<section class="card"><h2>报名与服务管理</h2>${t.applications.length ? t.applications.map((x) => `<article class="participant"><div class="between"><h3>${esc(x.volunteer.name)}</h3>${status(x.status)}</div><p>${esc(x.volunteer.skills || '未填写擅长服务')}</p><p>${esc(x.message || '无报名留言')}</p>${x.reason ? `<p>${esc(x.reason)}</p>` : ''}${x.status === 'pending' ? `<div class="actions">${btn('确认参与', 'accept-app', x.id, 'primary')}${btn('不通过', 'reject-app', x.id)}</div>` : ''}${recordBlock(x.record, true)}</article>`).join('') : empty('暂时没有人报名', '发布后可在这里确认参与人员。')}</section>` : ''}${a ? `<section class="card"><h2>我的参与</h2>${status(a.status)}${a.reason ? `<p>${esc(a.reason)}</p>` : ''}${recordBlock(a.record, false)}</section>` : ''}${t.mine && t.kind === 'redeem' ? `<section class="card"><h2>兑换预约</h2>${t.bookings.length ? t.bookings.map(bookingCard).join('') : empty('暂无兑换预约')}</section>` : ''}${t.mine || (a && (['accepted', 'checked_in', 'submitted', 'disputed', 'confirmed'].includes(a.status) || a.wasAccepted)) ? `<section class="card"><h2>与本次服务有关</h2><div class="actions">${btn('留言与评价', 'comments', id)}${btn('服务材料', 'files', id)}${t.mine ? btn('需求变更记录', 'audit', id) : ''}</div></section>` : ''}<div class="sticky-actions actions">${action || '<p>当前状态无待执行操作</p>'}</div>`,
+    `<section class="card task-hero"><div class="between"><span class="eyebrow">${t.kind === 'help' ? '助老帮扶' : '时间兑换'}</span>${status(a?.status || t.displayStatus || t.status)}</div><h1>${esc(t.title || '未命名草稿')}</h1><p>${esc(t.orgName)} · ${esc(t.category)}</p><div class="chips"><span>${hours(t.minutes)} 小时</span><span>剩余 ${t.remaining} / ${t.capacity} 名额</span></div></section>${changeBlock(t, a)}<section class="card requester-task-focus" data-task-section="arrangement" tabindex="-1"><h2>服务安排</h2><dl><dt>预约时间</dt><dd>${dateTime(t.start)} — ${dateTime(t.end)}</dd><dt>报名截止</dt><dd>${dateTime(t.deadline)}</dd><dt>服务区域</dt><dd>${esc(t.region)}</dd><dt>详细地址</dt><dd>${esc(t.address || '确认参与后向相关人员展示')}</dd>${t.meeting ? `<dt>集合说明</dt><dd>${esc(t.meeting)}</dd>` : ''}${t.contact ? `<dt>联系机构</dt><dd>${esc(t.contact)} · <a href="tel:${esc(t.phone)}">${esc(t.phone)}</a></dd>` : ''}</dl><div class="actions">${btn('查看到达说明', 'route', id)}${btn('在爱心地图查看', 'view-map', id, 'text-button')}</div></section><section class="card"><h2>需要做什么</h2><p class="pre">${esc(t.description || '暂无说明')}</p><h3>服务要求</h3><p class="pre">${esc(t.requirements || '愿意耐心陪伴，按约定时间参加。')}</p>${t.recipient ? `<h3>受助对象</h3><p>${esc(t.recipient)} · 预计 ${t.recipients} 人次</p>` : ''}${t.cancelReason ? `<p class="notice">取消原因：${esc(t.cancelReason)}</p>` : ''}</section>${t.mine && t.kind === 'help' ? requesterManagement(t) : ''}${a ? `<section class="card"><h2>我的参与</h2>${status(a.status)}${a.changeRequest ? `<p class="notice">时间调整申请已提交，等待需求方确认：${dateTime(a.changeRequest.start)} — ${dateTime(a.changeRequest.end)}</p>` : ''}${a.changeResolution ? `<p>时间调整${a.changeResolution.action === 'accept-request-change' ? '已同意' : '未通过'}：${esc(a.changeResolution.reason)}</p>` : ''}${a.reason ? `<p>${esc(a.reason)}</p>` : ''}${recordBlock(a.record, false)}</section>` : ''}${t.mine && t.kind === 'redeem' ? `<section class="card"><h2>兑换预约</h2>${t.bookings.length ? t.bookings.map(bookingCard).join('') : empty('暂无兑换预约')}</section>` : ''}${t.mine || (a && (['accepted', 'checked_in', 'submitted', 'disputed', 'confirmed'].includes(a.status) || a.wasAccepted)) ? `<section class="card"><h2>与本次服务有关</h2><div class="actions">${btn('留言与评价', 'comments', id)}${btn('服务材料', 'files', id)}${t.mine ? btn('需求变更记录', 'audit', id) : ''}</div></section>` : ''}<div class="sticky-actions actions">${action || '<p>当前状态无待执行操作</p>'}</div>`,
     t.kind === 'redeem' ? 'bank' : 'services',
     t.kind === 'redeem' ? '兑换服务详情' : '帮扶需求详情',
     true,
@@ -326,7 +476,42 @@ async function publishPage(id) {
   );
 }
 
+async function openBankLedger() {
+  const [bank, records] = await Promise.all([api('/bank'), api('/records')]);
+  state.bank = bank;
+  modal('收支明细', bankLedger(bank, records, state.bankLedgerFilter));
+}
 async function bankPage() {
+  if (!requester()) {
+    const [bank, offers] = await Promise.all([api('/bank'), api('/tasks?kind=redeem')]);
+    state.bank = bank;
+    if (!state.bankInitialized) {
+      state.bankFilter = {
+        org: bank.accounts.find((a) => a.contributed || a.pending || a.held)?.orgId || '',
+      };
+      state.bankInitialized = true;
+    }
+    const showLedger = state.bankTab === 'ledger';
+    if (showLedger) state.bankTab = 'offers';
+    const html = shell(
+      bankContent({
+        bank,
+        offers,
+        filter: state.bankFilter,
+        tab: state.bankTab,
+        bookingStatus: state.bookingStatus,
+      }),
+      'bank',
+      '',
+      false,
+      'volunteer-bank',
+    );
+    if (showLedger) {
+      state.bankLedgerFilter = { type: state.ledgerType || 'credit' };
+      await openBankLedger();
+    }
+    return html;
+  }
   const bank = await api('/bank');
   state.bank = bank;
   const btab = state.bankTab;
@@ -433,9 +618,13 @@ async function bookingPage(id) {
   );
 }
 async function profilePage() {
+  if (!requester()) {
+    const [map, bank] = await Promise.all([api('/map?scope=mine'), api('/bank')]);
+    return shell(volunteerProfile(state.user, map.summary, bank), 'profile', '', false, 'volunteer-profile');
+  }
   const map = await api('/map?scope=mine');
   return shell(
-    `<section class="profile-hero"><div class="avatar">${icon(requester() ? 'grid' : 'user')}</div><div><p class="eyebrow">${requester() ? '需求方 · 让善意在这里相遇' : '志愿者 · 让时间成为礼物'}</p><h1>${esc(state.user.name)}</h1><p>${esc(state.user.region)}</p></div>${btn('编辑', 'edit-profile', '', 'text-button')}</section><section class="card">${summary(map.summary)}</section><section class="card menu-list">${btn(`${icon('map')} ${requester() ? '本机构成果' : '我的爱心足迹'} ${icon('arrow')}`, 'footprints', '', 'menu-item')}${btn(`${icon('grid')} ${requester() ? '服务管理与历史记录' : '我参与的服务'} ${icon('arrow')}`, 'history', '', 'menu-item')}${btn(`${icon('clock')} 兑换记录 ${icon('arrow')}`, 'my-bookings', '', 'menu-item')}${btn(`${icon('bell')} 消息通知 ${icon('arrow')}`, 'notices', '', 'menu-item')}${btn(`${icon('user')} 账户与显示设置 ${icon('arrow')}`, 'settings', '', 'menu-item')}${btn('使用说明与隐私约定', 'terms', '', 'menu-item')}${btn('意见反馈', 'feedback', '', 'menu-item')}</section>${btn('退出登录', 'logout', '', 'secondary wide')}<p class="privacy-note">时光有路 · 帮助一个人，点亮一个地方</p>`,
+    `<section class="profile-hero"><div class="avatar">${icon(requester() ? 'grid' : 'user')}</div><div><p class="eyebrow">${requester() ? '需求方 · 让善意在这里相遇' : '志愿者 · 让时间成为礼物'}</p><h1>${esc(state.user.name)}</h1><p>${esc(state.user.region)}</p></div>${btn('编辑', 'edit-profile', '', 'text-button')}</section><section class="card">${summary(map.summary)}</section><section class="card menu-list">${btn(`${icon('map')} ${requester() ? '本机构成果' : '我的爱心足迹'} ${icon('arrow')}`, 'footprints', '', 'menu-item')}${btn(`${icon('grid')} ${requester() ? '服务管理与历史记录' : '我参与的服务'} ${icon('arrow')}`, 'history', '', 'menu-item')}${btn(`${icon('clock')} 兑换记录 ${icon('arrow')}`, 'my-bookings', '', 'menu-item')}${btn(`${icon('message')} 消息通知 ${icon('arrow')}`, 'notices', '', 'menu-item')}${btn(`${icon('user')} 账户与显示设置 ${icon('arrow')}`, 'settings', '', 'menu-item')}${btn('使用说明与隐私约定', 'terms', '', 'menu-item')}${btn('意见反馈', 'feedback', '', 'menu-item')}</section>${btn('退出登录', 'logout', '', 'secondary wide')}<p class="privacy-note">时光有路 · 帮助一个人，点亮一个地方</p>`,
     'profile',
     '我的',
   );
@@ -446,6 +635,8 @@ async function render() {
   const route = current();
   dirty = false;
   if (!state.user) {
+    document.documentElement.classList.remove('large-text');
+    document.title = '时光有路 · 登录';
     root.innerHTML = login();
     return;
   }
@@ -466,7 +657,24 @@ async function render() {
     else if (page === 'publish') html = await publishPage(id || 'help');
     else throw new Error('页面不存在');
     if (token !== renderToken) return;
+    baiduMap.suspend();
+    mapSheet.unmount();
     root.innerHTML = html;
+    mapSheet.mount(state);
+    if (document.querySelector('#baidu-map-slot'))
+      void baiduMap
+        .mount(state, {
+          select: (action, id) => onAction(action, id).catch((e) => toast(e.message)),
+        })
+        .then((ready) => {
+          if (token !== renderToken || !document.querySelector('#baidu-map-slot')) return;
+          if (ready && !state.mapAutoLocateAttempted) return onAction('map-auto-locate');
+          if (!ready && !state.city) {
+            const label = document.querySelector('.map-region-label');
+            if (label) label.textContent = '点击定位';
+          }
+        })
+        .catch((e) => toast(e.message));
     document.title = `时光有路 · ${root.querySelector('h1')?.textContent || '爱心地图'}`;
   } catch (e) {
     if (token === renderToken)
@@ -482,7 +690,257 @@ async function render() {
 }
 
 async function onAction(action, id, button) {
+  if (action === 'profile-history') {
+    state.tab = 'mine';
+    state.filter = { status: 'completed' };
+    go('services');
+    return;
+  }
+  if (action === 'profile-bank') {
+    state.bankTab = id === 'ledger' ? 'ledger' : 'offers';
+    state.bankFilter = {};
+    if (id === 'ledger') {
+      state.ledgerType = 'credit';
+      state.ledgerDate = '';
+    }
+    go('bank');
+    return;
+  }
+  if (action === 'profile-balance-help')
+    return modal(
+      '可用时间说明',
+      '<p>可用时间来自需求方已确认的实际志愿服务，按发放机构分别使用。</p><p>待确认、兑换占用及异议冻结的时间不计入可用余额。兑换使用时间不会减少累计志愿贡献，也不会抹去已有爱心足迹。</p>',
+    );
+  if (action === 'profile-help')
+    return modal(
+      '帮助与反馈',
+      `<details open><summary>如何积累时间与点亮地图？</summary><p>报名并完成真实服务，需求方确认有效时长后，时间入账并点亮服务所在地区。同一地点多次服务会保留记录，不重复增加地点数。</p></details><details><summary>为什么可用时间与累计贡献不同？</summary><p>待确认时间不能使用，兑换预约会占用对应机构的时间。兑换完成会扣除可用权益，但累计贡献与足迹保留。</p></details><details><summary>如何查看报名与兑换进度？</summary><p>帮扶任务在服务大厅的“我参与的”跟进；兑换申请在时间银行的“我的兑换”跟进。消息可直接打开相关任务。</p></details><div class="actions">${btn('使用说明与隐私约定', 'terms')}${btn('意见反馈', 'feedback', '', 'primary')}</div>`,
+    );
+  if (action === 'bank-reset') {
+    state.bankFilter = {};
+    return render();
+  }
+  if (action === 'bank-booking-status') {
+    state.bookingStatus = id;
+    return render();
+  }
+  if (action === 'bank-ledger') {
+    state.bankLedgerFilter = { org: state.bankFilter.org || '', type: id || '' };
+    return openBankLedger();
+  }
+  if (action === 'bank-ledger-reset') {
+    state.bankLedgerFilter = {};
+    return openBankLedger();
+  }
+  if (action === 'bank-account-info') {
+    const a = bankAccount(state.bank.accounts, state.bankFilter.org);
+    return modal(
+      '时间账户说明',
+      `<p class="notice">${state.bankFilter.org ? '当前机构' : '各机构合计'}累计贡献 <strong>${hours(a.contributed)} 小时</strong>。兑换不会减少已确认的志愿贡献和爱心足迹。</p><dl><dt>可用时间</dt><dd>${hours(a.available)} 小时</dd><dt>待确认</dt><dd>${hours(a.pending)} 小时</dd><dt>兑换占用</dt><dd>${hours(a.held)} 小时</dd><dt>已使用</dt><dd>${hours(a.used)} 小时</dd><dt>异议冻结</dt><dd>${hours(a.disputed)} 小时</dd></dl><p>每 1 小时经核实的有效志愿服务记录为 1 小时时间权益，出行和休息不计入。权益按确认时长的机构分别使用，不能跨机构合并花费，也不能转让或提现。</p>${btn('查看收支明细', 'bank-ledger', '', 'primary wide')}`,
+    );
+  }
+  if (action === 'bank-filter') {
+    const f = state.bankFilter;
+    const options = {
+      org: [
+        '切换机构',
+        select(
+          'org',
+          '服务机构',
+          [
+            ['', '全部机构'],
+            ...state.bank.accounts.map((a) => [a.orgId, `${a.orgName} · 可用 ${hours(a.available)} 小时`]),
+          ],
+          f.org,
+        ) +
+          '<p class="notice">选择机构后，同步查看该机构账户、可兑换服务和本人的兑换记录。不同机构的时间权益分别使用。</p>',
+      ],
+      date: ['预约日期', field('date', '选择预约日期（留空不限）', f.date || '', 'date', false)],
+      minutes: [
+        '所需时长',
+        select(
+          'minutes',
+          '兑换所需时间',
+          [
+            ['', '不限时长'],
+            ['30', '30 分钟以内'],
+            ['60', '1 小时以内'],
+            ['90', '1.5 小时以内'],
+            ['120', '2 小时以内'],
+            ['180', '3 小时以内'],
+          ],
+          f.minutes,
+        ),
+      ],
+      sort: [
+        '排序方式',
+        select(
+          'sort',
+          '选择排序方式',
+          [
+            ['', '默认排序'],
+            ['start', '预约时间优先'],
+            ['minutes', '所需时长从少到多'],
+            ['remaining', '剩余名额从多到少'],
+          ],
+          f.sort,
+        ),
+      ],
+    };
+    const option = options[id];
+    if (!option) return;
+    return modal(
+      option[0],
+      option[1] +
+        `<div class="actions">${btn('重置本项', 'bank-filter-clear', '', 'text-button')}${btn('取消', 'close', '', 'text-button')}</div>`,
+      async (values) => {
+        state.bankFilter = { ...state.bankFilter, ...values };
+        dialog.close();
+        await render();
+      },
+      '应用筛选',
+    );
+  }
+  if (action === 'bank-filter-clear') {
+    for (const input of dialog.querySelectorAll('input, select')) input.value = '';
+    return;
+  }
+  if (action === 'hall-status') {
+    state.filter.status = id;
+    return render();
+  }
+  if (action === 'requester-status') {
+    state.requesterStatus = id;
+    return render();
+  }
+  if (action === 'requester-todo-filter') {
+    state.requesterTodoFilter = state.requesterTodoFilter === id ? '' : id;
+    return render();
+  }
+  if (action === 'request-time-change') {
+    const t = state.task;
+    return modal(
+      '申请调整服务时间',
+      `${field('start', '建议开始时间', localTime(t.start), 'datetime-local')}${field('end', '建议结束时间', localTime(t.end), 'datetime-local')}${field('reason', '调整原因', '', 'textarea')}<p class="muted">需求方同意并完成相关人员确认后，新安排生效。</p>`,
+      (b) => mutate('/applications/' + id, { ...b, action: 'request-change' }),
+      '提交申请',
+    );
+  }
+  if (action === 'accept-request-change') {
+    const a = state.task.applications.find((x) => x.id === id);
+    return modal(
+      '确认调整时间',
+      `<p>${esc(a.volunteer.name)}申请调整为：</p><p>${dateTime(a.changeRequest.start)} — ${dateTime(a.changeRequest.end)}</p><p>${esc(a.changeRequest.reason)}</p><p class="muted">其他已确认志愿者仍需确认新安排。</p>`,
+      () => mutate('/applications/' + id, { action }),
+      '同意调整',
+    );
+  }
+  if (action === 'reject-request-change') return reason('不通过时间调整', '/applications/' + id, action);
+  if (action === 'handle-withdrawal')
+    return modal(
+      '处理人员退出',
+      `${field('reason', '人员安排说明', '', 'textarea')}<p class="muted">记录已联系、补招或调整安排的情况，原退出记录会保留。</p>`,
+      (b) => mutate('/applications/' + id, { ...b, action }),
+      '完成处理',
+    );
+  if (action === 'hall-filter') {
+    const f = state.filter;
+    const options = {
+      category: [
+        '服务类型',
+        select('category', '选择服务类型', [['', '全部类型'], ...hallCategories], f.category),
+      ],
+      distance: [
+        '距离与区域',
+        field('region', '服务区域（留空查看全部）', f.region || state.city, 'text', false) +
+          select(
+            'distance',
+            '距离范围',
+            [
+              ['', '不限距离'],
+              ['1', '1 公里内'],
+              ['3', '3 公里内'],
+              ['5', '5 公里内'],
+              ['10', '10 公里内'],
+            ],
+            f.distance,
+          ) +
+          '<p class="notice">地图路线尚未接入，可先按区域查找。选择距离范围时，无法确认距离的需求不会计入结果。</p>',
+      ],
+      date: ['预约日期', field('date', '选择预约日期（留空不限）', f.date, 'date', false)],
+      minutes: [
+        '服务时长',
+        select(
+          'minutes',
+          '有效服务时长',
+          [
+            ['', '不限时长'],
+            ['30', '30 分钟以内'],
+            ['60', '1 小时以内'],
+            ['90', '1.5 小时以内'],
+            ['120', '2 小时以内'],
+            ['180', '3 小时以内'],
+          ],
+          f.minutes,
+        ) +
+          select(
+            'budget',
+            '我的可用时间（含往返）',
+            [
+              ['', '不限可用时间'],
+              ['30', '我有 30 分钟'],
+              ['60', '我有 60 分钟'],
+              ['90', '我有 90 分钟'],
+            ],
+            f.budget,
+          ) +
+          '<p class="notice">可用时间包含服务、往返出行和 10 分钟缓冲；未知路线耗时的需求不会计入推荐。</p>',
+      ],
+      sort: [
+        '排序方式',
+        select(
+          'sort',
+          '选择排序方式',
+          [
+            ['distance', '距离优先'],
+            ['start', '开始时间优先'],
+          ],
+          f.sort || 'distance',
+        ) + '<p class="muted">距离未知的需求按开始时间排列；接入路线后优先显示距离已知的需求。</p>',
+      ],
+      org: [
+        '服务机构',
+        select(
+          'org',
+          '选择服务机构',
+          [
+            ['', '全部机构'],
+            ...new Map((state.ownServices || []).map((t) => [t.owner, t.orgName])).entries(),
+          ],
+          f.org,
+        ),
+      ],
+    };
+    const [title, fields] = options[id];
+    return modal(
+      title,
+      fields +
+        '<div class="hall-modal-actions"><button type="button" class="text-button" data-action="hall-clear-fields">重置本项</button><button type="button" class="text-button" data-action="close">取消</button></div>',
+      async (values) => {
+        state.filter = { ...state.filter, ...values };
+        dialog.close();
+        await render();
+      },
+      '应用筛选',
+    );
+  }
+  if (action === 'hall-clear-fields') {
+    for (const input of dialog.querySelectorAll('input, select'))
+      input.value = input.name === 'sort' ? 'distance' : '';
+    return;
+  }
   if (action === 'close') {
+    if (!mayDiscardProfileForm()) return;
     dialog.close();
     return;
   }
@@ -491,21 +949,8 @@ async function onAction(action, id, button) {
     return;
   }
   if (action === 'refresh') return state.config ? render() : boot();
-  if (action === 'code') {
-    const form = document.querySelector('#login-form'),
-      phone = form.elements.phone.value;
-    if (!/^1\d{10}$/.test(phone)) throw new Error('请输入 11 位有效手机号');
-    const result = await api('/auth/code', 'POST', { phone });
-    document.querySelector('#code-info').textContent = result.developmentCode
-      ? '开发模拟验证码：' + result.developmentCode
-      : '验证码已发送，请查看短信';
-    return;
-  }
-  if (action === 'terms')
-    return modal(
-      '使用说明与隐私约定',
-      `<p>时光有路连接社区助老需求与志愿者。当前仅有需求方和志愿者两个身份。</p><p>手机号用于登录。个人资料、联系信息和服务材料仅供相关参与者处理本次服务。公共成果只展示概略区域与匿名统计。</p><p>时间权益来自机构核实的实际服务，不是现金，按发放机构分别兑换。未提供的兑换服务取消后释放占用，争议由双方通过关联记录沟通并核实。</p><p>请取得受助者同意，避免上传不必要的身份、医疗或其他敏感材料。可通过任务留言申请资料更正，个人资料可在“我的”维护。</p><p>地图、短信、文件存储的真实接入以当前环境说明为准。</p>`,
-    );
+  if (action === 'login-role' && ['volunteer', 'requester'].includes(id)) return loginForm(id);
+  if (action === 'terms') return modal('使用说明与隐私约定', termsContent());
   if (action === 'logout')
     return modal(
       '退出当前账户',
@@ -528,7 +973,7 @@ async function onAction(action, id, button) {
   }
   if (action === 'bank-tab') {
     state.bankTab = id;
-    state.filter = {};
+    if (requester()) state.filter = {};
     return render();
   }
   if (action === 'reset-filter') {
@@ -537,7 +982,8 @@ async function onAction(action, id, button) {
   }
   if (action === 'footprints') {
     state.mapScope = 'mine';
-    state.city = '';
+    if (current() !== 'map') state.city = '';
+    state.selectedCell = null;
     if (current() === 'map') return render();
     go('map');
     return;
@@ -549,49 +995,300 @@ async function onAction(action, id, button) {
   if (action === 'history') {
     state.tab = requester() ? 'discover' : 'mine';
     state.filter = {};
+    state.requesterStatus = '';
     go('services');
     return;
   }
   if (action === 'my-bookings') {
     state.bankTab = 'bookings';
+    state.bookingStatus = '';
+    state.bankFilter = {};
     go('bank');
     return;
   }
   if (action === 'collapse') {
-    state.collapsed = !state.collapsed;
+    return mapSheet.setCollapsed(!state.collapsed);
+  }
+  if (action === 'map-scope') {
+    state.mapScope = id;
+    state.selectedCell = null;
     return render();
+  }
+  if (action === 'map-task') {
+    state.selectedTask = id;
+    state.selectedCell = null;
+    state.collapsed = false;
+    return render();
+  }
+  if (action === 'map-cell') {
+    state.selectedCell = id;
+    state.selectedTask = null;
+    state.collapsed = false;
+    return render();
+  }
+  if (action === 'map-clear') {
+    state.selectedTask = null;
+    state.selectedCell = null;
+    return render();
+  }
+  if (action === 'map-contribution') {
+    state.bankTab = 'ledger';
+    state.ledgerType = 'credit';
+    go('bank');
+    return;
+  }
+  if (action === 'map-todo') {
+    state.tab = 'todo';
+    state.filter = {};
+    go('services');
+    return;
+  }
+  if (action === 'map-publish') return go('publish/help');
+  if (action === 'map-more') {
+    if (state.city) state.filter = { ...state.filter, region: state.city };
+    state.tab = requester() ? 'todo' : 'discover';
+    go('services');
+    return;
+  }
+  if (action === 'map-explore') {
+    state.showNeeds = true;
+    state.collapsed = false;
+    state.selectedCell = null;
+    state.selectedTask = null;
+    await render();
+    document.querySelector('#map-action')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    return;
+  }
+  if (action === 'map-zoom-in') return baiduMap.zoom(1);
+  if (action === 'map-zoom-out') return baiduMap.zoom(-1);
+  if (action === 'map-this-area') {
+    const region = await baiduMap.centerRegion();
+    if (!region) throw new Error('没有识别到当前区域，请手动选择');
+    state.city = (region.district || region.city).replace(/市$/, '');
+    baiduMap.lastCity = state.city;
+    baiduMap.fittedCity = state.city;
+    state.selectedCell = null;
+    state.selectedTask = null;
+    return render();
+  }
+  if (action === 'map-place') {
+    const place = state.placeResults?.[Number(id)];
+    if (!place) return;
+    dialog.close();
+    baiduMap.focus(place.point, place.title);
+    toast('已定位到所选地点；可拖动地图后查看此区域的需求');
+    const area = document.querySelector('[data-action="map-this-area"]');
+    if (area) area.hidden = false;
+    return;
+  }
+  if (['map-locate', 'map-region-locate', 'map-auto-locate'].includes(action)) {
+    if (state.mapLocating) return;
+    const automatic = action === 'map-auto-locate';
+    const updateRegion = action !== 'map-locate';
+    if (state.config?.map?.provider === 'baidu') {
+      if (!automatic) dialog.close();
+      state.mapAutoLocateAttempted = true;
+      state.mapLocating = true;
+      const updateButtons = () => {
+        document
+          .querySelectorAll('[data-action="map-region-locate"], [data-action="map-locate"]')
+          .forEach((b) => {
+            b.disabled = state.mapLocating;
+            b.setAttribute('aria-busy', String(state.mapLocating));
+          });
+        const label = document.querySelector('.map-region-label');
+        if (label)
+          label.textContent = state.mapLocating
+            ? '定位中…'
+            : (state.mapRegion?.query === state.city && state.mapRegion.label) || state.city || '点击定位';
+      };
+      updateButtons();
+      try {
+        const point = await baiduMap.locate();
+        if (updateRegion) {
+          const region = await baiduMap.centerRegion(point);
+          if (!region || (!region.city && !region.district))
+            throw new Error('已找到当前位置，但暂未识别到地区，请重试或手动选择地区。');
+          const city = region.city.replace(/市$/, '');
+          const district = region.district.replace(/(区|县|市)$/, '');
+          state.city = district || city;
+          state.mapRegion = {
+            query: state.city,
+            city,
+            district,
+            label: [...new Set([city, region.district].filter(Boolean))].join('·'),
+          };
+          delete state.filter.region;
+          state.selectedCell = null;
+          state.selectedTask = null;
+          state.showNeeds = true;
+          // Keep the actual location and zoom after refreshing the local needs.
+          baiduMap.lastCity = state.city;
+          baiduMap.fittedCity = state.city;
+          if (current() === 'map') await render();
+          if (!automatic) toast('已更新所在地区和附近需求');
+        } else toast('已回到当前位置');
+      } catch (e) {
+        if (current() === 'map' && automatic) toast(e.message + ' 点击左上角可重试。');
+        else if (current() === 'map')
+          modal(
+            '定位提示',
+            '<p>' +
+              esc(e.message) +
+              '</p><div class="actions">' +
+              btn('重新定位', action, '', 'primary') +
+              btn(updateRegion ? '手动选择地区' : '手动搜索位置', updateRegion ? 'city' : 'map-search') +
+              '</div>',
+          );
+      } finally {
+        state.mapLocating = false;
+        updateButtons();
+      }
+      return;
+    }
+    return modal(
+      '回到当前位置',
+      '<p>请先手动选择所在城市或服务区域。</p>' + btn('手动选择所在区域', 'city', '', 'primary wide'),
+    );
   }
   if (action === 'city')
     return modal(
       '选择服务区域',
       field('city', '城市或区县（留空查看全部）', state.city, 'text', false) +
-        '<p class="notice">目前手动选择区域，未调用实时定位。</p>',
+        '<p class="map-filter-note">支持按需求中的区域名称查找，例如“杭州”或“西湖”。</p>',
       async (b) => {
-        state.city = b.city;
+        state.city = b.city.trim();
+        state.mapRegion = null;
+        delete state.filter.region;
+        state.selectedCell = null;
+        state.selectedTask = null;
         dialog.close();
         await render();
       },
       '查看这个区域',
     );
+  if (action === 'map-search')
+    return modal(
+      '搜索地点、社区服务',
+      field('q', '地点、需求或机构关键词', state.filter.q || '', 'search', false) +
+        (state.config?.map?.provider === 'baidu'
+          ? select(
+              'mode',
+              '搜索内容',
+              [
+                ['place', '地图地点与社区'],
+                ['needs', '本平台的帮扶需求'],
+              ],
+              'place',
+            )
+          : ''),
+      async (b) => {
+        if (b.mode === 'place') {
+          state.placeResults = await baiduMap.search(b.q);
+          modal(
+            '地点搜索结果',
+            state.placeResults.length
+              ? '<div class="map-place-results">' +
+                  state.placeResults
+                    .map((p, i) =>
+                      btn(
+                        '<b>' + esc(p.title) + '</b><small>' + esc(p.address) + '</small>',
+                        'map-place',
+                        String(i),
+                        'map-place-result',
+                      ),
+                    )
+                    .join('') +
+                  '</div>'
+              : '<p>没有找到这个地点，请补充城市或街道名称后重试。</p>' +
+                  btn('重新搜索', 'map-search', '', 'primary wide'),
+          );
+          return;
+        }
+        state.filter = { ...state.filter, q: b.q.trim() };
+        state.showNeeds = true;
+        state.selectedTask = null;
+        dialog.close();
+        await render();
+      },
+      '搜索',
+    );
   if (action === 'map-filter')
     return modal(
       '发现合适的帮助',
-      field('q', '区域或关键词', state.city, 'text', false) +
-        select('category', '服务类型', [['', '全部'], ...categories]) +
-        field('date', '日期', '', 'date', false) +
-        select('minutes', '服务时长', [
-          ['', '不限'],
-          ['30', '30 分钟'],
-          ['60', '60 分钟'],
-          ['90', '90 分钟'],
-        ]) +
-        '<p class="notice">距离、预计到达时间和含往返的空闲时间推荐，需地图路线接入后启用。</p>',
+      select('category', '服务类型', [['', '全部类型'], ...categories], state.filter.category) +
+        field('date', '预约日期', state.filter.date || '', 'date', false) +
+        select(
+          'minutes',
+          '服务时长',
+          [
+            ['', '不限'],
+            ['30', '30 分钟以内'],
+            ['60', '60 分钟以内'],
+            ['90', '90 分钟以内'],
+            ['180', '3 小时以内'],
+          ],
+          state.filter.minutes,
+        ) +
+        '<div class="two-col">' +
+        select(
+          'distance',
+          '服务距离',
+          [
+            ['', '不限'],
+            ['1', '1 公里以内'],
+            ['3', '3 公里以内'],
+            ['5', '5 公里以内'],
+          ],
+          state.filter.distance,
+        ) +
+        select(
+          'budget',
+          '我有空闲时间（含往返）',
+          [
+            ['', '不限'],
+            ['30', '30 分钟'],
+            ['60', '60 分钟'],
+            ['90', '90 分钟'],
+          ],
+          state.filter.budget,
+        ) +
+        '</div>' +
+        '<p class="map-filter-note">距离和空闲时间需要真实路线。当前路线未知，选择这两项将不会推荐需求；已确认的服务安排仍会保留。</p>' +
+        btn('重置筛选', 'map-reset-filter', '', 'text-button'),
       async (b) => {
-        state.filter = b;
-        state.tab = 'discover';
+        state.filter = { ...b, ...(state.filter.q ? { q: state.filter.q } : {}) };
+        state.selectedTask = null;
+        state.showNeeds = true;
         dialog.close();
-        go('services');
+        await render();
       },
+      '应用筛选',
+    );
+  if (action === 'map-reset-filter') {
+    state.filter = {};
+    return onAction('map-filter');
+  }
+  if (action === 'map-regions')
+    return modal(
+      '服务区域与爱心成果',
+      '<p class="map-filter-note">' +
+        (state.config?.map?.provider === 'baidu'
+          ? '百度地图 · 标记为约 500 米网格中心或区域概略位置。'
+          : '插画示意 · 标记按区域排列，不代表实际地理位置。') +
+        '已点亮仅代表本产品已有确认服务，并不表示所有需求均已解决。</p><h3>已点亮地区</h3><div class="map-region-list">' +
+        (state.cells
+          .map((c, i) =>
+            btn(
+              icon('heart') + ' ' + esc(c.region) + ' · ' + c.count + ' 次帮扶',
+              'cell',
+              String(i),
+              'light-cell',
+            ),
+          )
+          .join('') || '<p class="muted">暂无已确认的点亮成果。</p>') +
+        '</div><h3>待帮助需求</h3>' +
+        (state.mapNeeds.map(taskCard).join('') || '<p class="muted">当前筛选下暂无可报名需求。</p>'),
     );
   if (action === 'cell') {
     const c = state.cells[Number(id)];
@@ -601,15 +1298,20 @@ async function onAction(action, id, button) {
     );
   }
   if (action === 'help-cell') {
-    state.filter = { q: state.cells[Number(id)].region };
-    state.tab = 'discover';
+    state.city = state.cells[Number(id)].region;
+    state.showNeeds = true;
+    state.selectedCell = null;
+    state.selectedTask = null;
+    state.collapsed = false;
     dialog.close();
-    go('services');
-    return;
+    return render();
   }
   if (action === 'view-map') {
     state.city = state.task.region;
     state.mapScope = 'all';
+    state.selectedTask = id;
+    state.selectedCell = null;
+    state.collapsed = false;
     go('map');
     return;
   }
@@ -624,23 +1326,22 @@ async function onAction(action, id, button) {
     return;
   }
   if (action === 'edit-profile')
-    return modal('维护资料', profileFields(), async (b) => {
-      state.user = await api('/profile', 'PUT', b);
-      dialog.close();
-      await render();
-    });
+    return modal(
+      '编辑资料',
+      profileEditor(state.user),
+      async (b) => {
+        state.user = await api('/profile', 'PUT', b);
+        dialog.close();
+        await render();
+        toast('资料已保存');
+      },
+      '保存资料',
+      true,
+    );
   if (action === 'settings')
     return modal(
-      '账户与显示设置',
-      `<p>${esc(state.user.phone)} · ${requester() ? '需求方' : '志愿者'}</p>${select(
-        'fontSize',
-        '文字大小',
-        [
-          ['normal', '标准'],
-          ['large', '大字'],
-        ],
-        state.user.settings?.fontSize || 'normal',
-      )}<label class="check-row"><input name="notifications" type="checkbox" ${state.user.settings?.notifications !== false ? 'checked' : ''}>开启服务提醒</label><p>业务状态通知仍会保留在消息中心，便于追溯。</p>`,
+      '设置',
+      accountSettings(state.user),
       async (b) => {
         state.user = await api('/profile', 'PUT', {
           ...state.user,
@@ -648,7 +1349,10 @@ async function onAction(action, id, button) {
         });
         dialog.close();
         await render();
+        toast('设置已保存');
       },
+      '保存设置',
+      true,
     );
   if (action === 'feedback') {
     const list = await api('/feedback');
@@ -676,6 +1380,7 @@ async function onAction(action, id, button) {
   }
   if (action === 'read-all') {
     await api('/notices/read', 'PUT', {});
+    if (current() === 'services' && requester()) await render();
     return onAction('notices');
   }
   if (action === 'audit') {
@@ -803,7 +1508,14 @@ async function onAction(action, id, button) {
     return modal(
       '申请时间兑换',
       `<p>将占用 ${state.task.minutes} 分钟对应机构的时间权益，待双方确认履约后扣除。</p>${field('recipient', '受助对象（本人或家中老人）')}${field('phone', '联系电话', state.user.phone, 'tel')}${field('needs', '需要协助的事项', '', 'textarea', false)}<label class="check-row"><input name="consent" type="checkbox" required>我已获得受助者同意并核对服务安排</label>`,
-      (b) => mutate('/tasks/' + id + '/book', { ...b, consent: b.consent === 'on' }),
+      async (b) => {
+        const booking = await api('/tasks/' + id + '/book', 'POST', { ...b, consent: b.consent === 'on' });
+        dialog.close();
+        state.bankTab = 'bookings';
+        state.bookingStatus = '';
+        go('booking/' + booking.id);
+        toast('申请已提交，时间已占用，等待需求方确认');
+      },
       '确认申请',
     );
   const bookingActions = {
@@ -895,16 +1607,17 @@ async function shareCard() {
   c.fillStyle = '#fff6ee';
   c.fillRect(0, 0, 720, 900);
   c.fillStyle = '#ef715f';
-  c.font = 'bold 34px sans-serif';
+  await document.fonts.load('600 34px MiSans');
+  c.font = '600 34px MiSans';
   c.fillText('时光有路 · 我的爱心足迹', 55, 85);
   c.fillStyle = '#253644';
-  c.font = 'bold 44px sans-serif';
+  c.font = '600 44px MiSans';
   c.fillText('每一份善意，都有迹可循', 55, 180);
-  c.font = '28px sans-serif';
+  c.font = '28px MiSans';
   c.fillText(`点亮 ${s.places} 个地点`, 55, 280);
   c.fillText(`完成 ${s.services} 次服务`, 55, 340);
   c.fillText(`累计贡献 ${hours(s.minutes)} 小时`, 55, 400);
-  c.font = '22px sans-serif';
+  c.font = '22px MiSans';
   c.fillStyle = '#658273';
   [...new Set(data.cells.map((c) => c.region))]
     .slice(0, 6)
@@ -943,16 +1656,18 @@ document.addEventListener('submit', async (event) => {
   try {
     if (form.id === 'modal-form') await modalSubmit(b, form);
     if (form.id === 'login-form') {
-      const result = await api('/auth/verify', 'POST', {
-        ...b,
-        agreed: b.agreed === 'on',
-        role: submit.value,
-      });
+      const credentials = { ...state.config.demoAccounts[b.role], role: b.role };
+      const result = await api('/auth/demo-login', 'POST', credentials);
+      dialog.close();
       state.user = result.user;
       state.csrf = result.csrf;
       state.filter = {};
       state.tab = 'discover';
       state.bankTab = requester() ? 'ledger' : 'offers';
+      state.bankFilter = {};
+      state.bankInitialized = false;
+      state.bankLedgerFilter = {};
+      state.bookingStatus = '';
       go('map');
       await render();
     }
@@ -963,6 +1678,14 @@ document.addEventListener('submit', async (event) => {
     if (form.id === 'filter-form') {
       state.filter = b;
       await render();
+    }
+    if (form.id === 'hall-search') {
+      state.filter = { ...state.filter, q: b.q.trim() };
+      await render();
+    }
+    if (form.id === 'bank-ledger-form') {
+      state.bankLedgerFilter = b;
+      await openBankLedger();
     }
     if (form.id === 'publish-form') {
       const old = state.editTask;
@@ -1005,8 +1728,11 @@ document.addEventListener('change', async (e) => {
     await render();
   }
 });
+dialog.addEventListener('cancel', (e) => {
+  if (!mayDiscardProfileForm()) e.preventDefault();
+});
 window.addEventListener('beforeunload', (e) => {
-  if (dirty) {
+  if (dirty || profileFormChanged()) {
     e.preventDefault();
     e.returnValue = '';
   }
@@ -1021,12 +1747,14 @@ window.addEventListener('hashchange', async () => {
   dialog.close();
   await render();
   window.scrollTo(0, state.scroll.get(lastRoute) || 0);
+  focusTaskSection();
 });
 async function boot() {
   try {
     [state.config, { user: state.user, csrf: state.csrf }] = await Promise.all([api('/config'), api('/me')]);
     state.bankTab = requester() ? 'ledger' : 'offers';
     await render();
+    focusTaskSection();
   } catch (e) {
     root.innerHTML = `<main class="setup-page">${empty('连接暂时不可用', e.message)}${btn('重试', 'refresh', '', 'primary')}</main>`;
   }

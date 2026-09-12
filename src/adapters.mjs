@@ -1,8 +1,12 @@
 import { AppError, check } from './common.mjs';
 
-export function externalAdapters({ environment, smsProvider = 'development', smsUrl, smsToken } = {}) {
+export function externalAdapters({ environment, smsProvider = 'development', smsUrl, smsToken, mapProvider, browserAk = '' } = {}) {
   const development = environment !== 'production';
+  const baiduEnabled = mapProvider !== 'manual' && !!browserAk.trim();
   return {
+    // Browser AK is intentionally public and restricted by Baidu Referer rules.
+    // Never expose the server AK, signature secret, or the complete environment.
+    browserMap: { provider: baiduEnabled ? 'baidu' : 'manual', ...(baiduEnabled ? { browserAk: browserAk.trim(), version: '4.0' } : {}) },
     status: {
       development,
       sms:
@@ -11,7 +15,7 @@ export function externalAdapters({ environment, smsProvider = 'development', sms
           : smsProvider === 'webhook' && smsUrl && smsToken
             ? 'configured'
             : 'unavailable',
-      map: 'manual',
+      map: baiduEnabled ? 'baidu' : 'manual',
       upload: development ? 'local' : 'unavailable',
     },
     async sendCode(phone, code) {

@@ -20,6 +20,8 @@ export function services(options = {}) {
     );
   const adapters = externalAdapters({
     environment,
+    mapProvider: options.mapProvider ?? (environment === 'test' ? 'manual' : process.env.MAP_PROVIDER),
+    browserAk: options.baiduBrowserAk ?? (environment === 'test' ? '' : process.env.BAIDU_MAP_BROWSER_AK),
     smsProvider: options.smsProvider || process.env.SMS_PROVIDER || 'development',
     smsUrl: process.env.SMS_WEBHOOK_URL,
     smsToken: process.env.SMS_WEBHOOK_TOKEN,
@@ -27,7 +29,7 @@ export function services(options = {}) {
   return {
     store,
     domain: new Domain(store, adapters),
-    auth: new Auth(store, adapters),
+    auth: new Auth(store, environment),
     adapters,
     environment,
     origin: options.origin || process.env.PUBLIC_ORIGIN,
@@ -66,16 +68,18 @@ export async function api(request, response, url, ctx) {
     );
     check(String(request.headers['content-type']).startsWith('application/json'), '请使用 JSON 请求', 415);
   }
-  if (path === '/api/config' && method === 'GET') return send({ environment, adapters: adapters.status });
+  if (path === '/api/config' && method === 'GET')
+    return send({ environment, adapters: adapters.status, map: adapters.browserMap, demoAccounts: auth.demoConfig() });
   const session = auth.session(request),
     user = session?.user;
   if (path === '/api/me' && method === 'GET')
     return send({ user: user || null, csrf: session?.csrf || null });
   const body = write ? await bodyOf(request) : {};
   check(body && typeof body === 'object' && !Array.isArray(body), '请求内容必须为 JSON 对象');
-  if (path === '/api/auth/code' && method === 'POST') return send(await auth.code(body));
-  if (path === '/api/auth/verify' && method === 'POST') {
-    const result = auth.verify(body);
+  if (['/api/auth/code', '/api/auth/verify', '/api/auth/register'].includes(path))
+    throw new AppError(404, '该登录或注册方式已移除');
+  if (path === '/api/auth/demo-login' && method === 'POST') {
+    const result = auth.demoLogin(body);
     response.setHeader(
       'Set-Cookie',
       `tw_session=${result.token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=2592000${environment === 'production' ? '; Secure' : ''}`,

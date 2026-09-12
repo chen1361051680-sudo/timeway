@@ -1,0 +1,538 @@
+.volunteer-hall {
+  --ink: #142440;
+  --hall-blue: #398aff;
+  --hall-muted: #718099;
+  max-width: var(--mobile-page-width);
+  container-type: inline-size;
+  color: var(--ink);
+  background: #f7fbfe;
+  padding-bottom: calc(var(--bottom-nav-space) + 12px);
+}
+.volunteer-hall main {
+  padding: 0;
+}
+.hall-header {
+  height: 112px;
+  height: 23.8cqw;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 30px 22px 0;
+  padding: 6.4cqw 4.7cqw 0;
+  background: #dff1fb url('/images/hall-header.png') center 57% / cover no-repeat;
+}
+.hall-header h1 {
+  margin: 0;
+  font-size: clamp(25px, 5.5cqw, 29px);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+.hall-sheet {
+  position: relative;
+  margin-top: -12px;
+  border-radius: 30px 30px 0 0;
+  background: linear-gradient(180deg, #fffffffa, #f8fcff 230px);
+  min-height: calc(100dvh - 180px);
+  padding: 6px 14px 14px;
+  padding-inline: 3.1cqw;
+}
+.hall-tabs {
+  display: flex;
+  gap: 22px;
+  padding: 0 8px;
+  height: 45px;
+  height: 9.6cqw;
+  min-height: 44px;
+  align-items: stretch;
+}
+.hall-tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  padding: 0 0 7px;
+  background: none;
+  color: #52617c;
+  font-size: clamp(15px, 3.4cqw, 17px);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.hall-tab.active {
+  color: var(--ink);
+}
+.hall-tab.active::after {
+  content: '';
+  position: absolute;
+  height: 4px;
+  width: 38px;
+  background: linear-gradient(90deg, #ff795f, #ff4c50);
+  border-radius: 5px;
+  bottom: 1px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+.hall-count {
+  background: #ffe9e8;
+  color: #ff514f;
+  border-radius: 8px;
+  padding: 0 5px;
+  min-width: 19px;
+  line-height: 1.45;
+  font-weight: 400;
+  font-size: 14px;
+}
+.hall-search {
+  margin: 8px 5px 5px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  border-radius: 25px;
+  background: #f0f5fb;
+}
+.hall-search button {
+  background: none;
+  border: 0;
+  height: 100%;
+  width: 40px;
+  padding: 0;
+  color: #8792a7;
+  flex-shrink: 0;
+}
+.hall-search .icon {
+  width: 21px;
+  height: 21px;
+}
+.hall-search input {
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  border: 0;
+  border-radius: 25px;
+  padding: 0 12px 0 0;
+  background: transparent;
+  font-size: 13px;
+  font-size: clamp(12px, 2.8cqw, 14px);
+  color: var(--ink);
+  box-shadow: none;
+}
+.hall-search input::placeholder {
+  color: #949eb2;
+}
+.hall-search:focus-within {
+  outline: 2px solid #8bbbff;
+}
+.hall-search input:focus {
+  outline: none;
+}
+.hall-filters {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1px 5px 2px;
+  min-height: 45px;
+}
+.hall-filter {
+  border: 0;
+  border-radius: 11px;
+  background: #f1f5fa;
+  color: #1e304f;
+  padding: 6px 9px;
+  padding-inline: 1.9cqw;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  gap: 1.1cqw;
+  white-space: nowrap;
+  font-size: clamp(10px, 2.55cqw, 12px);
+  min-width: 0;
+}
+.hall-filter .icon {
+  width: 11px;
+  height: 11px;
+}
+.hall-filter:last-child {
+  background: none;
+  padding-inline: 1px;
+  margin-left: auto;
+}
+.hall-filter:last-child .icon:first-child {
+  width: 13px;
+  height: 13px;
+}
+.hall-filter.selected {
+  color: #e5534f;
+  background: #ffefed;
+}
+.hall-list {
+  display: grid;
+  gap: 11px;
+  gap: 2.3cqw;
+  margin-top: 6px;
+}
+.hall-card {
+  display: flex;
+  gap: 12px;
+  gap: 2.65cqw;
+  padding: 8px;
+  padding: 1.7cqw;
+  background: #fff;
+  border: 1px solid #fff;
+  border-radius: 14px;
+  box-shadow: 0 3px 14px #4f80af09;
+  min-width: 0;
+  transition:
+    box-shadow 0.15s,
+    transform 0.15s;
+}
+.hall-picture {
+  width: 25.7%;
+  flex-shrink: 0;
+  position: relative;
+  overflow: hidden;
+  border-radius: 8px;
+  align-self: stretch;
+  min-height: 112px;
+  min-height: 24cqw;
+  background: #e8f1eb;
+}
+.hall-picture img {
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  inset: 0;
+  object-fit: cover;
+}
+.hall-category {
+  position: absolute;
+  left: 0;
+  top: 0;
+  padding: 2px 8px;
+  padding-inline: 1.7cqw;
+  border-radius: 0 0 8px 0;
+  color: white;
+  background: #398affed;
+  font-size: clamp(10px, 2.55cqw, 12px);
+  font-weight: 600;
+  line-height: 1.5;
+}
+.hall-category.green {
+  background: #4ac397eb;
+}
+.hall-category.orange {
+  background: #ffb342ef;
+}
+.hall-card-content {
+  flex: 1;
+  min-width: 0;
+  padding-top: 0;
+}
+.hall-card-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 5px;
+  min-height: 23px;
+  margin-bottom: 2px;
+}
+.hall-card h3 {
+  margin: 0;
+  font-size: clamp(13px, 3.15cqw, 15px);
+  font-weight: 600;
+  line-height: 1.45;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hall-vacancy {
+  flex-shrink: 0;
+  border-radius: 18px;
+  color: #fc514f;
+  background: #ffecec;
+  font-size: clamp(10px, 2.45cqw, 12px);
+  padding: 2px 11px;
+  padding-inline: 2.3cqw;
+  white-space: nowrap;
+}
+.hall-vacancy strong {
+  font-size: 1.12em;
+  font-weight: 400;
+}
+.hall-card .badge {
+  font-size: 10px;
+  padding: 3px 7px;
+  flex-shrink: 0;
+}
+.hall-org,
+.hall-location {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  font-size: clamp(10px, 2.35cqw, 11.5px);
+  color: var(--hall-muted);
+  line-height: 1.7;
+}
+.hall-org span,
+.hall-location span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hall-org .icon,
+.hall-location .icon {
+  margin: 0;
+  width: 14px;
+  height: 14px;
+}
+.hall-org .icon {
+  color: var(--hall-blue);
+  stroke-width: 2.2;
+}
+.hall-location .icon {
+  color: #a9acb5;
+  fill: #a9acb5;
+  stroke: white;
+  stroke-width: 1.4;
+}
+.hall-chips {
+  display: flex;
+  gap: 4px;
+  gap: 0.85cqw;
+  margin-top: 7px;
+  margin-top: 1.5cqw;
+}
+.hall-chips span {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  white-space: nowrap;
+  padding: 3px 6px;
+  padding-inline: 1.1cqw;
+  background: #f2f7ff;
+  border-radius: 7px;
+  color: #133568;
+  font-size: clamp(9px, 2.45cqw, 11.5px);
+  line-height: 1.5;
+}
+.hall-chips .icon {
+  width: 13px;
+  height: 13px;
+  color: var(--hall-blue);
+  stroke-width: 2;
+}
+.hall-card-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 3px;
+  margin-top: -5px;
+}
+.hall-arrival {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--hall-muted);
+  font-size: clamp(9px, 2.35cqw, 11.5px);
+  white-space: nowrap;
+  padding-top: 11px;
+}
+.hall-arrival .icon {
+  width: 17px;
+  height: 17px;
+  color: #3e5677;
+}
+.hall-detail {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  color: white;
+  background: linear-gradient(110deg, #ff8a69, #fa4c53);
+  border: 1px solid #ffffffa1;
+  border-radius: 24px;
+  box-shadow: 0 3px 7px #ff665021;
+  font-size: clamp(12px, 2.8cqw, 14px);
+  font-weight: 600;
+  min-width: 92px;
+  min-width: 19.5cqw;
+  min-height: 33px;
+  min-height: 7cqw;
+  padding: 4px 11px;
+  margin-top: 1px;
+}
+.hall-change,
+.hall-result {
+  font-size: 10px;
+  color: #d7604e;
+  margin: 5px 0 0;
+}
+.hall-statuses {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 5px 5px 10px;
+}
+.hall-status {
+  background: #f0f4f9;
+  border: 0;
+  border-radius: 20px;
+  color: #6a7891;
+  font-size: 12px;
+  padding: 6px 10px;
+}
+.hall-status.active {
+  background: #ffebe8;
+  color: #e65c50;
+}
+.hall-org-filter {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  background: none;
+  border: 0;
+  color: #66768e;
+  font-size: 12px;
+  padding: 6px 0;
+}
+.hall-org-filter .icon {
+  width: 14px;
+  height: 14px;
+}
+.hall-filter-summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin: 0 6px;
+  font-size: 11px;
+  color: #7a879b;
+}
+.hall-filter-summary .text-button {
+  min-height: 32px;
+  padding-block: 4px;
+}
+.hall-empty {
+  background: #fff;
+  border-radius: 16px;
+  padding: 12px 10px 24px;
+}
+.hall-empty .actions {
+  justify-content: center;
+}
+.hall-end {
+  text-align: center;
+  color: #8f9bad;
+  margin: 24px 0 8px;
+  font-size: 11px;
+}
+.hall-demo {
+  text-align: center;
+  color: #929cab;
+  font-size: 10px;
+  margin: 0;
+}
+.hall-modal-actions {
+  display: flex;
+  justify-content: space-between;
+}
+.hall-sheet {
+  padding-top: 3px;
+}
+.hall-search {
+  margin-top: 6px;
+}
+.hall-filters {
+  min-height: 40px;
+}
+.hall-filter {
+  padding-block: 4px;
+}
+.hall-card-heading {
+  min-height: 22px;
+  margin-bottom: 0;
+}
+.hall-org,
+.hall-location {
+  line-height: 1.5;
+}
+.hall-card-bottom {
+  margin-top: -8px;
+}
+@media (hover: hover) {
+  .hall-card:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 5px 20px #4f80af18;
+  }
+  .hall-filter:hover {
+    color: #eb6255;
+  }
+}
+@media (max-width: 360px) {
+  .hall-filters {
+    gap: 4px;
+  }
+  .hall-filter {
+    gap: 3px;
+    padding-inline: 5px;
+  }
+  .hall-filter .icon {
+    width: 9px;
+    height: 9px;
+  }
+  .hall-picture {
+    width: 24%;
+  }
+  .hall-card {
+    gap: 7px;
+  }
+  .hall-chips {
+    gap: 3px;
+  }
+  .hall-chips span {
+    padding-inline: 3px;
+    gap: 2px;
+  }
+  .hall-chips .icon {
+    width: 11px;
+    height: 11px;
+  }
+  .hall-arrival {
+    gap: 3px;
+  }
+  .hall-arrival .icon {
+    width: 13px;
+    height: 13px;
+  }
+}
+.large-text .hall-card h3 {
+  font-size: 17px;
+  white-space: normal;
+}
+.large-text .hall-org,
+.large-text .hall-location,
+.large-text .hall-arrival,
+.large-text .hall-chips span {
+  font-size: 13px;
+}
+.large-text .hall-chips,
+.large-text .hall-card-bottom,
+.large-text .hall-card-heading,
+.large-text .hall-filters {
+  flex-wrap: wrap;
+}
+.large-text .hall-card-bottom {
+  margin-top: 5px;
+}
+.large-text .hall-arrival {
+  padding-top: 0;
+}
+.large-text .hall-detail {
+  margin-left: auto;
+  font-size: 15px;
+}
+.large-text .hall-filter {
+  font-size: 13px;
+}

@@ -341,13 +341,10 @@ test('HTTP auth, csrf, idempotent creation and production mock gate', async (t) 
       headers: { 'Content-Type': 'application/json', ...headers },
       body: JSON.stringify(data),
     });
-  const code = await (await post('/api/auth/code', { phone: '13800000001' })).json();
-  assert.match(code.developmentCode, /^\d{6}$/);
-  const login = await post('/api/auth/verify', {
-    phone: '13800000001',
-    code: code.developmentCode,
+  const login = await post('/api/auth/demo-login', {
+    account: 'requester',
+    password: 'timeway123',
     role: 'requester',
-    agreed: true,
   });
   const cookie = login.headers.get('set-cookie').split(';')[0],
     auth = await login.json(),
@@ -369,11 +366,11 @@ test('HTTP auth, csrf, idempotent creation and production mock gate', async (t) 
   prod.listen(0, '127.0.0.1');
   await once(prod, 'listening');
   t.after(() => new Promise((r) => prod.close(r)));
-  const r = await fetch(`http://127.0.0.1:${prod.address().port}/api/auth/code`, {
+  const r = await fetch(`http://127.0.0.1:${prod.address().port}/api/auth/demo-login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ phone: '13800000002' }),
+    body: JSON.stringify({ role: 'volunteer', account: 'volunteer', password: 'timeway123' }),
   });
-  assert.equal(r.status, 503);
+  assert.equal(r.status, 403);
   assert.equal((await r.json()).developmentCode, undefined);
 });

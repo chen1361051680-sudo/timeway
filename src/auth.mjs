@@ -1,69 +1,89 @@
-import { randomBytes, randomInt, randomUUID, createHash } from 'node:crypto';
-import { check, text } from './common.mjs';
+import { randomBytes, createHash } from 'node:crypto';
+import { check } from './common.mjs';
 const hash = (s) => createHash('sha256').update(s).digest('hex');
+
+// Public demonstration credentials; never authenticate production users.
+const demoAccounts = {
+  volunteer: {
+    account: 'volunteer',
+    password: 'timeway123',
+    id: 'demo-vol',
+    phone: '13800000002',
+    name: '模拟志愿者',
+  },
+  requester: {
+    account: 'requester',
+    password: 'timeway123',
+    id: 'demo-org',
+    phone: '13800000001',
+    name: '模拟需求方',
+  },
+};
 export class Auth {
-  constructor(store, adapters) {
+  constructor(store, environment) {
     this.s = store;
-    this.adapters = adapters;
+    this.environment = environment;
   }
-  async code(body) {
-    const phone = text(body.phone, '手机号', 11);
-    check(/^1\d{10}$/.test(phone), '请输入正确的11位手机号');
-    const old = this.s.db.prepare('SELECT * FROM otps WHERE phone=?').get(phone);
-    check(!old || Date.now() - old.sent >= 60000, '请等待60秒后重新获取验证码', 429);
-    const code = String(randomInt(100000, 1000000));
-    this.s.db
-      .prepare('INSERT OR REPLACE INTO otps VALUES (?,?,?,?,?)')
-      .run(phone, hash(phone + code), Date.now() + 300000, 0, Date.now());
-    try {
-      const result = await this.adapters.sendCode(phone, code);
-      return { sent: true, cooldown: 60, ...result };
-    } catch (error) {
-      this.s.db.prepare('DELETE FROM otps WHERE phone=? AND hash=?').run(phone, hash(phone + code));
-      throw error;
-    }
+  demoConfig() {
+    if (!['development', 'test'].includes(this.environment)) return null;
+    return Object.fromEntries(
+      Object.entries(demoAccounts).map(([role, { account, password }]) => [role, { account, password }]),
+    );
   }
-  verify(body) {
-    const phone = text(body.phone, '手机号', 11),
-      code = text(body.code, '验证码', 6);
-    check(body.agreed === true, '请阅读并同意用户协议和隐私说明');
+  demoLogin(body) {
+    check(this.demoConfig(), '当前环境不开放模拟账号登录', 403);
     check(['volunteer', 'requester'].includes(body.role), '请选择正确身份');
-    const otp = this.s.db.prepare('SELECT * FROM otps WHERE phone=?').get(phone);
-    check(otp && otp.expires > Date.now() && otp.attempts < 5, '验证码已失效，请重新获取');
-    this.s.db.prepare('UPDATE otps SET attempts=attempts+1 WHERE phone=?').run(phone);
-    check(otp.hash === hash(phone + code), '验证码错误');
-    let row = this.s.db.prepare('SELECT id,role FROM users WHERE phone=?').get(phone);
-    check(!row || row.role === body.role, '该手机号已注册为另一身份，请选择对应入口', 409);
+    const account = demoAccounts[body.role];
+    check(
+      body.account === account.account && body.password === account.password,
+      '账号或密码错误，请使用当前身份的模拟账号',
+      401,
+    );
+    this.ensureDemoAccount(body.role);
+    return this.createSession(account.id);
+  }
+  ensureDemoAccount(role) {
+    check(this.demoConfig(), '当前环境不开放模拟账号', 403);
+    check(['volunteer', 'requester'].includes(role), '请选择正确身份');
+    const account = demoAccounts[role];
     return this.s.transaction(() => {
-      if (!row) {
-        const id = randomUUID();
+      const existing = this.s.user(account.id);
+      // Reuse only the named demo identity, never an arbitrary phone account.
+      check(
+        !existing || (existing.role === role && existing.phone === account.phone),
+        '模拟账号数据冲突，请检查本地演示数据',
+        409,
+      );
+      if (!existing) {
+        check(
+          !this.s.db.prepare('SELECT id FROM users WHERE phone=?').get(account.phone),
+          '模拟账号号码已被占用，请检查本地演示数据',
+          409,
+        );
+        const user = {
+          name: account.name,
+          region: '杭州西湖区',
+          contact: '',
+          address: '',
+          skills: '',
+          profileComplete: true,
+          settings: { fontSize: 'normal', notifications: true },
+        };
         this.s.db
           .prepare('INSERT INTO users VALUES (?,?,?,?)')
-          .run(
-            id,
-            phone,
-            body.role,
-            JSON.stringify({
-              name: '',
-              region: '',
-              skills: '',
-              contact: '',
-              address: '',
-              profileComplete: false,
-              settings: { notifications: true, fontSize: 'normal' },
-            }),
-          );
-        row = { id };
+          .run(account.id, account.phone, role, JSON.stringify(user));
       }
-      this.s.db.prepare('DELETE FROM otps WHERE phone=?').run(phone);
-      const token = randomBytes(32).toString('hex'),
-        csrf = randomBytes(24).toString('hex');
-      this.s.db.prepare('DELETE FROM sessions WHERE expires<?').run(Date.now());
-      this.s.db
-        .prepare('INSERT INTO sessions VALUES (?,?,?,?)')
-        .run(hash(token), row.id, csrf, Date.now() + 30 * 86400000);
-      return { token, csrf, user: this.s.user(row.id) };
+      return this.s.user(account.id);
     });
+  }
+  createSession(userId) {
+    const token = randomBytes(32).toString('hex'),
+      csrf = randomBytes(24).toString('hex');
+    this.s.db.prepare('DELETE FROM sessions WHERE expires<?').run(Date.now());
+    this.s.db
+      .prepare('INSERT INTO sessions VALUES (?,?,?,?)')
+      .run(hash(token), userId, csrf, Date.now() + 30 * 86400000);
+    return { token, csrf, user: this.s.user(userId) };
   }
   session(request) {
     const token = (request.headers.cookie || '')

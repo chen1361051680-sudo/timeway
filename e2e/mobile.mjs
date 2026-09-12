@@ -22,30 +22,26 @@ async function page() {
   p.on('pageerror', (e) => errors.push(e.message));
   return p;
 }
-async function login(p, phone, role, name) {
+async function login(p, role) {
   await p.goto(base);
-  await p.getByLabel('手机号码').fill(phone);
-  await p.getByRole('button', { name: '获取验证码' }).click();
-  await expect(p.locator('#code-info')).toContainText('开发模拟验证码');
-  const code = (await p.locator('#code-info').innerText()).match(/\d{6}/)[0];
-  await p.getByLabel('验证码', { exact: true }).fill(code);
-  await p.locator('[name=agreed]').check();
+  await expect(p.locator('.login-entry')).toHaveCount(2);
   await p
     .getByRole('button', {
-      name: role === 'requester' ? '我是需求方（社区／机构）' : '我是志愿者',
+      name: role === 'requester' ? '需求方登录（社区、机构等）' : '志愿者登录',
       exact: true,
     })
     .click();
-  await p.getByLabel(role === 'requester' ? '机构名称' : '姓名', { exact: true }).fill(name);
-  await p.getByLabel('常用服务区域').fill('杭州西湖区');
-  if (role === 'requester') {
-    await p.getByLabel('机构联系人').fill('测试负责人');
-    await p.getByLabel('机构地址', { exact: true }).fill('测试机构地址');
-  }
-  await p.getByRole('button', { name: '保存并进入' }).click();
-  await expect(p.getByRole('heading', { name: '爱心地图', exact: true })).toBeVisible();
+  await expect(p.getByRole('dialog')).toBeVisible();
+  await expect(p.locator('#login-form [name=role]')).toHaveValue(role);
+  await expect(p.locator('#login-form input:not([type=hidden])')).toHaveCount(0);
+  await expect(p.locator('#login-form button[type=submit]')).toHaveCount(1);
+  await expect(p.locator('#login-form')).not.toContainText(/timeway123|volunteer|requester/);
+  await p.getByRole('button', { name: '一键快速登录（模拟账号）', exact: true }).click();
+  await expect(p.getByRole('dialog')).not.toBeVisible();
+  await expect(p.locator('.map-stage')).toBeVisible();
 }
 async function snapshot(p, name) {
+  await p.evaluate(() => document.fonts.ready);
   await p.screenshot({ path: `tmp/ui-checks/${name}.png`, fullPage: true });
   expect(await p.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
 }
@@ -59,6 +55,7 @@ async function fillTask(p, kind) {
   await p.getByLabel('具体服务内容').fill('测试业务流程，陪伴老人交流一小时。');
   await p.getByLabel('受助对象／适用人群').fill('测试受助对象');
   await p.getByLabel('详细地址（仅相关人员可见）').fill('测试隐私地址 301');
+  await p.getByLabel('机构联系人').fill('测试联系人');
   await p.getByLabel('纬度（可选）').fill('30.25');
   await p.getByLabel('经度（可选）').fill('120.15');
   if (kind === 'redeem') await p.getByLabel('兑换占用分钟').fill('30');
@@ -69,8 +66,38 @@ async function fillTask(p, kind) {
 try {
   const org = await page(),
     vol = await page();
-  await login(org, '13800000001', 'requester', '测试西湖社区');
-  await login(vol, '13800000002', 'volunteer', '测试志愿者');
+  await vol.goto(base);
+  await expect(vol.getByRole('heading', { name: '时光有路', exact: true })).toBeVisible();
+  for (const [width, height] of [
+    [320, 568],
+    [390, 844],
+    [430, 932],
+    [1440, 900],
+  ]) {
+    await vol.setViewportSize({ width, height });
+    await snapshot(vol, `login-${width}`);
+    for (const entry of await vol.locator('.login-entry').all()) await expect(entry).toBeInViewport();
+  }
+  await vol.setViewportSize({ width: 390, height: 844 });
+  await vol.getByRole('button', { name: '志愿者登录', exact: true }).click();
+  await expect(vol.locator('.login-help')).toHaveText(
+    '为方便使用，请提供一键登录按钮及模拟账号登录。请点击下方登录按钮正常使用。',
+  );
+  await snapshot(vol, 'login-volunteer-form');
+  await vol.setViewportSize({ width: 320, height: 480 });
+  await snapshot(vol, 'login-small-form');
+  await vol.getByRole('button', { name: '一键快速登录（模拟账号）', exact: true }).scrollIntoViewIfNeeded();
+  await expect(vol.getByRole('button', { name: '一键快速登录（模拟账号）', exact: true })).toBeInViewport();
+  await vol.setViewportSize({ width: 390, height: 844 });
+  await vol.getByRole('button', { name: '关闭弹窗' }).click();
+  await expect(vol.getByRole('button', { name: '志愿者登录', exact: true })).toBeFocused();
+  await vol.getByRole('button', { name: '需求方登录（社区、机构等）', exact: true }).click();
+  await expect(vol.locator('#login-form [name=role]')).toHaveValue('requester');
+  await snapshot(vol, 'login-requester-form');
+  await vol.keyboard.press('Escape');
+  await expect(vol.getByRole('dialog')).not.toBeVisible();
+  await login(org, 'requester');
+  await login(vol, 'volunteer');
   const taskId = await fillTask(org, 'help');
   await snapshot(org, 'requester-task');
   await visit(vol, 'services');
@@ -102,10 +129,10 @@ try {
   await org.locator('#modal-form').getByRole('button', { name: '确认', exact: true }).click();
   await expect(org.getByText('提交 60 分钟 · 已确认 60 分钟 · 1 受助人次')).toBeVisible();
   await visit(vol, 'map');
-  await expect(vol.locator('.light-cell')).toHaveCount(1);
+  await expect(vol.locator('.map-pin-love')).toHaveCount(1);
   await snapshot(vol, 'volunteer-map');
   await visit(vol, 'bank');
-  await expect(vol.locator('.bank-hero>strong')).toContainText('1');
+  await expect(vol.locator('.bank-available strong')).toHaveText('1小时');
   await snapshot(vol, 'volunteer-bank');
   const offerId = await fillTask(org, 'redeem');
   await visit(vol, 'task/' + offerId);
@@ -129,6 +156,9 @@ try {
   await org.getByRole('button', { name: '提交申请人确认' }).click();
   await expect(org.getByRole('heading', { name: '实际履约结果' })).toBeVisible();
   await visit(vol, 'booking/' + bk.id);
+  // The application now opens this booking immediately after a successful request.
+  // Refresh the same route to fetch the institution's newly submitted result.
+  await vol.reload();
   await vol.getByRole('button', { name: '确认实际结果', exact: true }).click();
   await vol.getByRole('button', { name: '确认完成并结算' }).click();
   await expect(vol.getByText('占用 0 分钟 · 实际扣除 20 分钟')).toBeVisible();
@@ -144,18 +174,18 @@ try {
       await snapshot(p, `${name}-${tab}`);
     }
   await visit(org, 'services');
-  await org.getByRole('tab', { name: '待办', exact: true }).click();
-  await expect(org.locator('.tab.active')).toHaveText('待办');
+  await org.getByRole('tab', { name: /^待办/ }).click();
+  await expect(org.locator('.requester-tab.active')).toContainText('待办');
   await visit(vol, 'profile');
-  await vol.getByRole('button', { name: '编辑', exact: true }).click();
+  await vol.locator('[data-action=edit-profile]').click();
   await vol.getByLabel('擅长服务').fill('耐心陪伴、出行协助');
-  await vol.locator('#modal-form').getByRole('button', { name: '确认', exact: true }).click();
+  await vol.locator('#modal-form').getByRole('button', { name: '保存资料', exact: true }).click();
   await vol.reload();
-  await vol.getByRole('button', { name: '编辑', exact: true }).click();
+  await vol.locator('[data-action=edit-profile]').click();
   await expect(vol.getByLabel('擅长服务')).toHaveValue('耐心陪伴、出行协助');
   expect(errors).toEqual([]);
   console.log(
-    'Mobile UI passed: two-role registration, publishing, privacy, application, confirmation, credit/map, partial redemption, profile persistence; 4 tabs and no horizontal overflow.',
+    'Mobile UI passed: two-role quick demo login, publishing, privacy, application, confirmation, credit/map, partial redemption, profile persistence; 4 tabs and no horizontal overflow.',
   );
 } finally {
   await browser.close();

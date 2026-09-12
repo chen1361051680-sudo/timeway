@@ -4,12 +4,39 @@ export const esc = (v) =>
     (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c],
   );
 const paths = {
+  tag: 'M3 3h8l10 10-8 8L3 11V3zM7 7h.01',
+  'help-circle': 'M9 9a3 3 0 016 0c0 2-3 2-3 5m0 3h.01M22 12a10 10 0 11-20 0 10 10 0 0120 0z',
+  'chevron-down': 'M6 9l6 6 6-6',
+  filter: 'M3 3h18l-7 9v9l-4-2v-7L3 3z',
+  locate: 'M12 2v3m0 14v3M2 12h3m14 0h3M20 12a8 8 0 11-16 0 8 8 0 0116 0zM16 12a4 4 0 11-8 0 4 4 0 018 0z',
+  info: 'M12 11v6m0-10v.1M22 12a10 10 0 11-20 0 10 10 0 0120 0z',
+  navigation: 'M21 3l-6 18-4-8-8-4 18-6z',
+  building: 'M5 21V5h14v16M3 21h18M9 8h1m4 0h1m-6 4h1m4 0h1m-6 9v-5h6v5M3 5l9-3 9 3',
+  medical: 'M4 6h16v15H4zM8 6V3h8v3m-4 4v7m-3-3.5h6',
+  utensils: 'M5 3v6m3-6v6m3-6v6M5 8c0 4 6 4 6 0M8 12v9M19 3v18m0-18c-4 3-4 9 0 9',
+  accessible: 'M12 3a1.5 1.5 0 110 3 1.5 1.5 0 010-3zM11 8v6h6l3 7M11 10h6M8 11a6 6 0 106 10',
+  book: 'M12 5v16M12 5C9 2 5 2 2 3v16c4-1 7-1 10 2 3-3 6-3 10-2V3c-3-1-7-1-10 2z',
+  footprints:
+    'M8 10c3 1 3 5 1 7-2 2-5 0-5-3s1-5 4-4zM5 6v1m4-3v2m8 7c3 0 4 3 3 6-1 3-4 4-5 1-1-3-1-6 2-7zM16 9v1m4-2v2',
+  sprout: 'M12 22V12M12 16C3 17 1 11 2 5c7 0 11 4 10 11zM12 12C12 5 17 2 23 3c-1 7-5 10-11 9',
+  home: 'M2 11l10-9 10 9M5 9v13h14V9M9 22v-7h6v7M9 10h.01M15 10h.01',
+  chevron: 'M6 9l6 6 6-6',
+  sort: 'M7 20V4M3 8l4-4 4 4M17 4v16M13 16l4 4 4-4',
+  car: 'M4 10l2-6h12l2 6M3 17V11l2-1h14l2 1v6H3zM5 17v3M19 17v3M6 13h2M16 13h2',
+  bus: 'M6 3h12a2 2 0 012 2v13H4V5a2 2 0 012-2zM4 11h16M8 6h8M7 15h1M16 15h1M7 18l-2 4M17 18l2 4',
   map: 'M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3V6zm6-3v15m6-12v15',
   heart: 'M20.8 4.6a5.5 5.5 0 00-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 00-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 000-7.8z',
   grid: 'M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z',
   clock: 'M12 8v5l3 2M22 12a10 10 0 11-20 0 10 10 0 0120 0z',
   user: 'M20 21v-2a7 7 0 00-14 0v2M16 7a4 4 0 11-8 0 4 4 0 018 0z',
-  bell: 'M18 8a6 6 0 00-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4',
+  'user-filled': 'M12 2a4.5 4.5 0 110 9 4.5 4.5 0 010-9zM4 20a8 8 0 0116 0v1H4z',
+  'users-filled':
+    'M12 2a3.6 3.6 0 110 7.2A3.6 3.6 0 0112 2zM4.5 4a2.8 2.8 0 110 5.6 2.8 2.8 0 010-5.6zM19.5 4a2.8 2.8 0 110 5.6 2.8 2.8 0 010-5.6zM12 10.5a5.5 5.5 0 015.5 5.5v5h-11v-5a5.5 5.5 0 015.5-5.5zM4.5 11c.6 0 1.2.1 1.7.4A7 7 0 005 16v4H0v-4.5A4.5 4.5 0 014.5 11zM19.5 11A4.5 4.5 0 0124 15.5V20h-5v-4a7 7 0 00-1.2-4.6c.5-.3 1.1-.4 1.7-.4z',
+  users:
+    'M16 21v-2a4 4 0 00-8 0v2M15 8a3 3 0 11-6 0 3 3 0 016 0zM20 20v-2a4 4 0 00-3-3.87M18 5a3 3 0 010 6M4 20v-2a4 4 0 013-3.87M6 5a3 3 0 000 6',
+  message: 'M4 3h16a2 2 0 012 2v12a2 2 0 01-2 2H8l-6 3V5a2 2 0 012-2zM7 8h10M7 13h7',
+  bell: 'M5 17h14l-2-3V9a5 5 0 00-10 0v5l-2 3zM10 20a2 2 0 004 0M12 2v2',
+  clipboard: 'M9 4H5v18h14V4h-4M9 2h6v5H9zM8 12h8M8 17h6',
   pin: 'M20 10c0 6-8 12-8 12S4 16 4 10a8 8 0 1116 0zM15 10a3 3 0 11-6 0 3 3 0 016 0z',
   back: 'M15 18l-6-6 6-6',
   arrow: 'M9 18l6-6-6-6',
@@ -22,6 +49,16 @@ const paths = {
 };
 export const icon = (name = 'heart') =>
   `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${paths[name] || paths.heart}"/></svg>`;
+export function navIcon(name) {
+  const shapes = {
+    map: '<path fill="currentColor" d="M1 9l7-3 8 2 7-3v15l-7 3-8-2-7 2z"/><path fill="currentColor" stroke="white" stroke-width="1.4" stroke-linejoin="round" d="M12 1a6 6 0 0 0-6 6c0 4 6 9 6 9s6-5 6-9a6 6 0 0 0-6-6z"/><path fill="white" d="M12 11l-2.8-2.8a1.9 1.9 0 0 1 2.8-2.5 1.9 1.9 0 0 1 2.8 2.5z"/>',
+    grid: '<rect fill="currentColor" x="1" y="1" width="10" height="10" rx="3"/><rect fill="currentColor" x="13" y="1" width="10" height="10" rx="3"/><rect fill="currentColor" x="1" y="13" width="10" height="10" rx="3"/><rect fill="currentColor" x="13" y="13" width="10" height="10" rx="3"/>',
+    clock:
+      '<circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="2.7"/><path d="M12 6v7h5" fill="none" stroke="currentColor" stroke-width="2.7" stroke-linecap="round"/>',
+    user: '<path fill="currentColor" d="M12 1a9 9 0 0 0-5 16c-4 1-5 3-5 6h20c0-3-1-5-5-6a9 9 0 0 0-5-16z"/><path fill="white" d="M12 15l-3.3-3.3a2.2 2.2 0 0 1 3.3-2.9 2.2 2.2 0 0 1 3.3 2.9z"/>',
+  };
+  return `<svg class="icon" viewBox="0 0 24 24" aria-hidden="true">${shapes[name]}</svg>`;
+}
 export const dateTime = (v) =>
   v
     ? new Date(v).toLocaleString('zh-CN', {

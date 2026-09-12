@@ -1,16 +1,21 @@
 import './check.mjs';
 import { mkdir, copyFile, writeFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
-await mkdir('dist/public', { recursive: true });
-for (const file of ['index.html', 'app.js', 'ui.js', 'styles.css'])
-  await copyFile('public/' + file, 'dist/public/' + file);
+import { dirname } from 'node:path';
+import { publicAssets } from '../src/assets.mjs';
+const files = await publicAssets();
+for (const file of files) {
+  const destination = 'dist/public/' + file;
+  await mkdir(dirname(destination), { recursive: true });
+  await copyFile('public/' + file, destination);
+}
 await writeFile(
   'dist/manifest.json',
   JSON.stringify(
     {
       version: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
       builtAt: new Date().toISOString(),
-      files: ['index.html', 'app.js', 'ui.js', 'styles.css'],
+      files,
     },
     null,
     2,

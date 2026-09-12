@@ -36,16 +36,20 @@ async function setup(t) {
   let n = 0;
   const login = async (role) => {
     const phone = '1390000000' + ++n;
-    const c = await call('/auth/code', { phone });
-    const r = await call('/auth/verify', { phone, code: c.data.developmentCode, role, agreed: true });
-    const auth = { cookie: r.headers.get('set-cookie').split(';')[0], 'x-csrf-token': r.data.csrf };
+    // Additional isolated actors are fixtures, not a public registration endpoint.
+    const id = 'test-actor-' + n;
+    server.context.store.db
+      .prepare('INSERT INTO users VALUES (?,?,?,?)')
+      .run(id, phone, role, JSON.stringify({ profileComplete: false }));
+    const session = server.context.auth.createSession(id);
+    const auth = { cookie: 'tw_session=' + session.token, 'x-csrf-token': session.csrf };
     await call(
       '/profile',
       { name: '测试' + n, region: '杭州', contact: '联系人', address: '地址' },
       auth,
       'PUT',
     );
-    return { auth, user: server.context.store.user(r.data.user.id) };
+    return { auth, user: server.context.store.user(id) };
   };
   return { server, base, call, login };
 }
@@ -136,28 +140,41 @@ test('HTTP concurrent final-place acceptance, exact replay, cross-role and priva
   await call('/auth/logout', {}, winner.auth);
   assert.equal((await call('/bank', undefined, winner.auth)).status, 401);
 });
-test('OTP resend cooldown, wrong-code limit, replay, unknown environment and production isolation', async (t) => {
-  const { call } = await setup(t),
-    phone = '13700000001';
-  const first = await call('/auth/code', { phone });
-  assert.equal((await call('/auth/code', { phone })).status, 429);
-  for (let i = 0; i < 5; i++)
-    assert.equal(
-      (await call('/auth/verify', { phone, code: '000000', role: 'volunteer', agreed: true })).status,
-      400,
-    );
-  assert.equal(
-    (await call('/auth/verify', { phone, code: first.data.developmentCode, role: 'volunteer', agreed: true }))
-      .status,
-    400,
-  );
-  const other = '13700000002',
-    next = await call('/auth/code', { phone: other });
-  const payload = { phone: other, code: next.data.developmentCode, role: 'volunteer', agreed: true };
-  assert.equal((await call('/auth/verify', payload)).status, 200);
-  assert.equal((await call('/auth/verify', payload)).status, 400);
+test('demo login checks credentials and role, reuses profiles, and removes registration', async (t) => {
+  const { call, server } = await setup(t);
+  const payload = { account: 'volunteer', password: 'timeway123', role: 'volunteer' };
+  for (const body of [
+    { ...payload, password: 'wrong' },
+    { ...payload, account: 'new-account' },
+    { ...payload, role: 'requester' },
+  ]) {
+    assert.equal((await call('/auth/demo-login', body)).status, 401);
+  }
+  assert.equal(server.context.store.users().length, 0);
+  assert.equal((await call('/auth/demo-login', { ...payload, role: 'admin' })).status, 400);
+  for (const path of ['/auth/code', '/auth/verify', '/auth/register'])
+    assert.equal((await call(path, payload)).status, 404);
+  assert.equal((await call('/auth/demo-login', payload, { Origin: 'https://evil.invalid' })).status, 403);
+  const first = await call('/auth/demo-login', payload);
+  assert.equal(first.status, 200);
+  assert.equal(first.data.user.role, 'volunteer');
+  assert.equal(first.data.user.profileComplete, true);
+  assert.equal(first.data.token, undefined);
+  assert.match(first.headers.get('set-cookie'), /HttpOnly; SameSite=Lax/);
+  const user = server.context.store.user(first.data.user.id);
+  user.name = '保留修改后的名字';
+  server.context.store.saveUser(user);
+  const second = await call('/auth/demo-login', payload);
+  assert.equal(second.data.user.id, user.id);
+  assert.equal(second.data.user.name, user.name);
+  assert.equal(server.context.store.users().length, 1);
+  const auth = { cookie: second.headers.get('set-cookie').split(';')[0], 'x-csrf-token': second.data.csrf };
+  assert.equal((await call('/me', undefined, auth)).data.user.id, user.id);
+  await call('/auth/logout', {}, auth);
+  assert.equal((await call('/bank', undefined, auth)).status, 401);
   assert.throws(() => createTimewayServer({ environment: 'prod', databasePath: ':memory:' }), /NODE_ENV/);
 });
+
 test('SQLite consistent backup contains committed WAL data and refuses environment or schema mismatch', (t) => {
   const dir = mkdtempSync(join(tmpdir(), 'timeway-backup-')),
     path = join(dir, 'test.sqlite');

@@ -3,24 +3,24 @@ import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { isIP } from 'node:net';
 import { api, services } from './src/http.mjs';
-const assets = new Map([
-  ['/', 'index.html'],
-  ['/styles.css', 'styles.css'],
-  ['/app.js', 'app.js'],
-  ['/ui.js', 'ui.js'],
-]);
-const types = { html: 'text/html', css: 'text/css', js: 'text/javascript' };
+import { publicAssets, assetTypes } from './src/assets.mjs';
 export function createTimewayServer(options = {}) {
   const ctx = services(options),
     version = options.version || 'development',
     limits = new Map();
+  // Baidu's blob workers derive HTTP tile URLs from local HTTP pages.
+  // Keep this compatibility exception out of production HTTPS responses.
+  const localMapScripts = ctx.environment === 'production' ? '' : ' http://api.map.baidu.com';
+  const localMapTiles = ctx.environment === 'production' ? '' : ' http://apimaponline0.bdimg.com http://apimaponline1.bdimg.com http://apimaponline2.bdimg.com http://apimaponline3.bdimg.com';
   const server = createServer(async (req, res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader(
       'Content-Security-Policy',
-      "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'",
+      ctx.adapters.status.map === 'baidu'
+        ? `upgrade-insecure-requests; default-src 'self'; script-src 'self' 'unsafe-eval'${localMapScripts} https://api.map.baidu.com https://*.bdimg.com https://dlswbr.baidu.com https://map.baidu.com; style-src 'self' 'unsafe-inline' https://api.map.baidu.com https://*.map.bdimg.com; img-src 'self' data: blob: https://miao.baidu.com https://*.bdimg.com https://*.map.baidu.com https://map.baidu.com https://*.bdstatic.com; connect-src 'self'${localMapTiles} https://miao.baidu.com https://*.map.baidu.com https://map.baidu.com https://*.bdimg.com https://*.bdstatic.com; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'`
+        : "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'",
     );
     try {
       const url = new URL(req.url, 'http://127.0.0.1');
@@ -65,16 +65,19 @@ export function createTimewayServer(options = {}) {
         body = JSON.stringify({ status: 'ok', service: 'timeway', version });
         type = 'application/json';
       } else {
-        const file = assets.get(url.pathname);
+        // Refresh the public asset inventory per request so new frontend modules
+        // are available without restarting the development server.
+        const requested = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
+        const file = (await publicAssets()).includes(requested) ? requested : null;
         if (!file) {
           res.writeHead(404);
           res.end(req.method === 'HEAD' ? undefined : 'Not found');
           return;
         }
         body = await readFile(new URL(`./public/${file}`, import.meta.url));
-        type = types[file.split('.').pop()];
+        type = assetTypes[file.split('.').pop().toLowerCase()];
       }
-      res.writeHead(200, { 'Content-Type': `${type}; charset=utf-8` });
+      res.writeHead(200, { 'Content-Type': /^(image|font)\//.test(type) ? type : `${type}; charset=utf-8` });
       res.end(req.method === 'HEAD' ? undefined : body);
     } catch (e) {
       if (!e.status) console.error('Request failed:', e.message);
