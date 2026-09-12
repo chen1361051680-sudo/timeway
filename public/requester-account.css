@@ -1,0 +1,1046 @@
+.requester-bank,
+.requester-profile {
+  --ra-ink: #080f30;
+  --ra-muted: #7d87a3;
+  max-width: var(--mobile-page-width);
+  container-type: inline-size;
+  color: var(--ra-ink);
+  background: #f7fbfe;
+  padding-bottom: calc(var(--bottom-nav-space) + 8px);
+}
+.requester-bank main,
+.requester-profile main {
+  padding: 0;
+}
+.requester-bank .red {
+  color: #fb262e;
+}
+.requester-bank .blue,
+.requester-profile .blue {
+  color: #1699ff;
+}
+.requester-bank .amber {
+  color: #f79500;
+}
+.requester-bank .green {
+  color: #0aaa79;
+}
+.requester-bank .gray {
+  color: #7d86a0;
+}
+.requester-bank .pink {
+  color: #ff7397;
+}
+.requester-bank .orange {
+  color: #ff9d13;
+}
+.requester-bank .indigo {
+  color: #6691f2;
+}
+.ra-header {
+  position: relative;
+  background: #dbf1ff center 63% / cover no-repeat;
+}
+.rb-header {
+  background-image: url('/images/requester-bank-header.webp');
+}
+.ra-outline {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1.2cqw;
+  border: 1px solid #ff5952;
+  border-radius: 2.7cqw;
+  background: #fffafa;
+  color: #ff3129;
+  font-size: 2.65cqw;
+  font-weight: 600;
+  padding: 1.4cqw 2.5cqw;
+  white-space: nowrap;
+}
+.ra-outline .icon {
+  width: 2.3cqw;
+  height: 2.3cqw;
+}
+.rb-summary {
+  position: relative;
+  margin-top: -2.8cqw;
+  padding: 3cqw 3.6cqw 2.6cqw;
+  border-radius: 4.7cqw;
+  background: linear-gradient(120deg, #fffafa, #fff9f8);
+  box-shadow: 0 4px 20px #ccdfec26;
+}
+.rb-org {
+  display: flex;
+  align-items: center;
+  gap: 2.9cqw;
+  margin-bottom: 2.5cqw;
+  min-width: 0;
+}
+.rb-org > div {
+  flex: 1;
+  min-width: 0;
+}
+.rb-org-icon {
+  flex-shrink: 0;
+  width: 10cqw;
+  height: 10cqw;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #ffeceb;
+  color: #ff493b;
+}
+.rb-org-icon .icon {
+  width: 6.3cqw;
+  height: 6.3cqw;
+}
+.rb-org-name {
+  display: flex;
+  align-items: center;
+  gap: 1.3cqw;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ra-ink);
+  font-size: 3.7cqw;
+  font-weight: 600;
+  text-align: left;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.rb-org-name .icon {
+  width: 2.6cqw;
+  height: 2.6cqw;
+  color: #808a9e;
+}
+.rb-org p {
+  font-size: 2.45cqw;
+  color: var(--ra-muted);
+  margin: 0.7cqw 0 0;
+  letter-spacing: 0.015em;
+}
+.rb-view-records {
+  flex-shrink: 0;
+  min-width: 19.8cqw;
+  min-height: 7.2cqw;
+  padding-inline: 2.5cqw;
+  align-self: flex-start;
+  margin-top: 0.9cqw;
+}
+.rb-metrics {
+  display: grid;
+  grid-template-columns: 1.36fr 1fr 1fr;
+  gap: 1.9cqw;
+}
+.rb-metric {
+  padding: 1.55cqw 1.7cqw 1.3cqw;
+  border-radius: 2cqw;
+  border: 0;
+  background: #fff0f0;
+  text-align: left;
+  min-width: 0;
+  min-height: 15.5cqw;
+}
+.rb-metric.blue {
+  background: #edf5ff;
+}
+.rb-metric.amber {
+  background: #fff6e6;
+}
+.rb-metric-heading {
+  display: flex;
+  align-items: center;
+  gap: 1.1cqw;
+  white-space: nowrap;
+  color: #0c1c50;
+  font-size: 2.5cqw;
+  font-weight: 600;
+}
+.rb-metric.amber .rb-metric-heading {
+  color: #a14906;
+}
+.rb-metric-icon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 6.2cqw;
+  height: 6.2cqw;
+  border-radius: 50%;
+  background: #ffe6e3;
+  color: #ff2d2b;
+}
+.rb-metric-icon .icon {
+  width: 4.5cqw;
+  height: 4.5cqw;
+}
+.rb-metric.blue .rb-metric-icon {
+  background: #dfefff;
+  color: #129aff;
+}
+.rb-metric.amber .rb-metric-icon {
+  background: #ffedc5;
+  color: #ff9100;
+}
+.rb-metric-value {
+  display: flex;
+  align-items: baseline;
+  gap: 0.8cqw;
+  margin-left: 7.8cqw;
+  white-space: nowrap;
+  font-size: 2.8cqw;
+  color: var(--ra-ink);
+}
+.rb-metric-value strong {
+  font-size: 5.2cqw;
+  line-height: 1.15;
+  letter-spacing: -0.03em;
+}
+.rb-metric.red .rb-metric-value {
+  color: #f61923;
+}
+.rb-metric.red .rb-metric-value strong {
+  font-size: 6.1cqw;
+}
+.rb-metric-value .icon {
+  align-self: center;
+  margin-left: auto;
+  width: 2.5cqw;
+  height: 2.5cqw;
+  color: #6a7fa5;
+}
+.rb-metric.red .rb-metric-value .icon {
+  color: #ff5248;
+}
+.rb-metric.amber .rb-metric-value .icon {
+  color: #f18700;
+}
+.rb-summary-note {
+  display: flex;
+  align-items: center;
+  gap: 1.5cqw;
+  margin: 1.8cqw 0 0;
+  min-height: 5.3cqw;
+  padding: 0.7cqw 2cqw;
+  background: #f0f2f8c9;
+  border-radius: 1.5cqw;
+  color: #7a8ba9;
+  font-size: 2.35cqw;
+  line-height: 1.5;
+}
+.rb-summary-note .icon {
+  margin: 0;
+  width: 2.9cqw;
+  height: 2.9cqw;
+  color: #8a9bb8;
+}
+.rb-content {
+  padding: 1.1cqw 3.4cqw 0;
+}
+.rb-tabs {
+  display: flex;
+  justify-content: space-around;
+  height: 8.2cqw;
+  margin-bottom: 1.2cqw;
+}
+.rb-tab {
+  border: 0;
+  background: none;
+  color: #455983;
+  font-size: 3.5cqw;
+  padding: 0 0 1.7cqw;
+  position: relative;
+  font-weight: 400;
+  white-space: nowrap;
+}
+.rb-tab.active {
+  color: var(--ra-ink);
+  font-weight: 600;
+}
+.rb-tab.active::after {
+  content: '';
+  position: absolute;
+  bottom: 0.8cqw;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 10cqw;
+  height: 0.85cqw;
+  border-radius: 5px;
+  background: linear-gradient(#ff7062, #ff343c);
+}
+.rb-filters,
+.rb-booking-filters {
+  display: flex;
+  align-items: center;
+  gap: 2.6cqw;
+  margin-bottom: 1.8cqw;
+  min-height: 6.1cqw;
+}
+.rb-filter {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 1.6cqw;
+  min-height: 6.1cqw;
+  min-width: 22cqw;
+  max-width: 55cqw;
+  padding: 0.9cqw 2.8cqw;
+  border: 0;
+  border-radius: 2.1cqw;
+  background: #edf5ff;
+  color: #40567f;
+  font-size: 2.75cqw;
+}
+.rb-filter > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rb-filter .icon {
+  width: 2.85cqw;
+  height: 2.85cqw;
+}
+.rb-filter > .icon:last-child {
+  margin-left: auto;
+}
+.rb-filter.selected {
+  background: #ffece8;
+  color: #e95648;
+}
+.rb-reset {
+  margin-left: auto;
+  border: 0;
+  background: none;
+  color: #e55d50;
+  font-size: 2.6cqw;
+  padding: 0;
+  min-height: 32px;
+}
+.rb-records,
+.rb-offers,
+.rb-bookings {
+  display: grid;
+  gap: 1.9cqw;
+}
+.rb-record {
+  display: flex;
+  align-items: flex-start;
+  position: relative;
+  gap: 2.55cqw;
+  padding: 1.45cqw 1.4cqw;
+  min-height: 18.7cqw;
+  border: 1px solid white;
+  border-radius: 2.3cqw;
+  box-shadow: 0 4px 16px #bfddef1f;
+  background: white;
+}
+.rb-avatar {
+  flex: 0 0 12.4cqw;
+  width: 12.4cqw;
+  height: 12.4cqw;
+  margin-top: 0.1cqw;
+  border-radius: 50%;
+  background: #e4efff url('/images/requester-bank-reference.webp') no-repeat;
+  background-size: 100cqw auto;
+  background-position-x: -4.7cqw;
+}
+.rb-avatar.companion {
+  background-position-y: -85.1cqw;
+}
+.rb-avatar.medical {
+  background-position-y: -105.5cqw;
+}
+.rb-avatar.housework {
+  background-position-y: -125.9cqw;
+}
+.rb-avatar.walk {
+  background-position-y: -146.5cqw;
+}
+.rb-record-body {
+  flex: 1;
+  min-width: 0;
+}
+.rb-record h2 {
+  font-size: 3.35cqw;
+  margin: 0 21cqw 0.3cqw 0;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+.rb-record-service {
+  display: flex;
+  align-items: center;
+  gap: 1.35cqw;
+  font-size: 2.65cqw;
+  line-height: 1.35;
+  margin: 0 21cqw 0.8cqw 0;
+}
+.rb-record-service .icon {
+  width: 2.8cqw;
+  height: 2.8cqw;
+  margin: 0;
+}
+.rb-record-details {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  width: calc(100% - 25cqw);
+  min-width: 0;
+}
+.rb-record-details > div {
+  display: flex;
+  align-items: flex-start;
+  gap: 1.6cqw;
+  min-width: 0;
+}
+.rb-record-details > div + div {
+  border-left: 1px solid #edf5fc;
+  padding-left: 3cqw;
+}
+.rb-record-details .icon {
+  margin-top: 0.5cqw;
+  color: #3299ff;
+  width: 3cqw;
+  height: 3cqw;
+}
+.rb-record-details span {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+.rb-record-details small {
+  font-size: 2.2cqw;
+  color: #7e91b6;
+}
+.rb-record-details strong {
+  font-size: 2.75cqw;
+  font-weight: 600;
+}
+.rb-record-state {
+  position: absolute;
+  top: 1.85cqw;
+  right: 1.6cqw;
+  display: inline-flex;
+  align-items: center;
+  gap: 1.05cqw;
+  border-radius: 5cqw;
+  padding: 0.65cqw 1.65cqw;
+  background: #e5fbf3;
+  font-size: 2.6cqw;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.rb-record-state .icon {
+  width: 2.8cqw;
+  height: 2.8cqw;
+}
+.rb-record-state.amber {
+  background: #fff3dd;
+}
+.rb-record-state.gray {
+  background: #f0f3f7;
+}
+.rb-record-action {
+  position: absolute;
+  right: 1.6cqw;
+  bottom: 2.15cqw;
+  min-width: 20.5cqw;
+  min-height: 6.8cqw;
+  box-shadow: 0 4px 9px #ff7e5211;
+}
+.rb-record-change {
+  font-size: 2.3cqw;
+  color: #8b7694;
+  margin: 1cqw 22cqw 0 0;
+}
+.rb-list-heading {
+  color: #65789c;
+  font-size: 2.8cqw;
+}
+.rb-publish {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1.5cqw;
+  min-height: 8cqw;
+  margin: 1cqw 0 2cqw;
+  border-radius: 2.2cqw;
+  color: white;
+  background: linear-gradient(110deg, #ff855e, #ff353d);
+  font-size: 3cqw;
+  font-weight: 600;
+}
+.rb-publish .icon {
+  width: 3.4cqw;
+  height: 3.4cqw;
+}
+.rb-offer,
+.rb-booking {
+  background: white;
+  padding: 2.3cqw;
+  border: 1px solid white;
+  border-radius: 2.4cqw;
+  box-shadow: 0 4px 16px #bfddef1f;
+}
+.rb-offer {
+  display: flex;
+  gap: 2.8cqw;
+}
+.rb-offer > img {
+  width: 20cqw;
+  height: 23cqw;
+  border-radius: 1.6cqw;
+  object-fit: cover;
+}
+.rb-offer > div {
+  flex: 1;
+  min-width: 0;
+}
+.rb-offer-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 1.5cqw;
+  align-items: center;
+}
+.rb-offer-heading h2 {
+  margin: 0;
+  font-size: 3.1cqw;
+  overflow-wrap: anywhere;
+}
+.rb-offer .badge,
+.rb-booking .badge {
+  font-size: max(10px, 2.3cqw);
+  flex-shrink: 0;
+}
+.rb-offer p,
+.rb-booking p {
+  margin: 0.8cqw 0;
+  color: var(--ra-muted);
+  font-size: max(11px, 2.4cqw);
+}
+.rb-offer-action {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  color: #ff5948;
+  font-size: max(12px, 2.6cqw);
+}
+.rb-offer-action .icon {
+  width: 2.5cqw;
+  height: 2.5cqw;
+}
+.rb-booking-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2cqw;
+  font-size: 2.7cqw;
+}
+
+.requester-profile {
+  background: #fcfbf9;
+  padding-bottom: calc(var(--bottom-nav-space) + 12px);
+}
+.rp-cover {
+  position: relative;
+  background: #e7f3fc url('/images/requester-profile-header.webp') center 57% / cover no-repeat;
+}
+.rp-settings {
+  position: absolute;
+  right: 3cqw;
+  top: 4.8cqw;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  background: none;
+  border: 0;
+  color: var(--ra-ink);
+  padding: 0;
+}
+.rp-settings .icon {
+  width: 5cqw;
+  height: 5cqw;
+}
+.rp-body {
+  position: relative;
+  margin-top: -8.1cqw;
+  padding: 0 1.9cqw;
+  display: grid;
+  gap: 1.8cqw;
+}
+.rp-card {
+  border: 1px solid white;
+  border-radius: 3cqw;
+  background: #fffffff5;
+  box-shadow: 0 4px 20px #bfcee519;
+}
+.rp-identity {
+  display: flex;
+  align-items: center;
+  gap: 2.6cqw;
+  min-height: 22cqw;
+  padding: 2.4cqw 2.7cqw;
+}
+.rp-org-emblem {
+  display: block;
+  flex: 0 0 16.6cqw;
+  width: 16.6cqw;
+  height: 16.6cqw;
+  border-radius: 50%;
+  background: #eee url('/images/requester-profile-reference.webp') no-repeat;
+  background-size: 100cqw auto;
+  background-position: -4.45cqw -32.2cqw;
+}
+.rp-identity-copy {
+  flex: 1;
+  min-width: 0;
+}
+.rp-name-row {
+  display: flex;
+  align-items: center;
+  gap: 2cqw;
+  margin-bottom: 1.4cqw;
+  flex-wrap: wrap;
+}
+.rp-name-row h2 {
+  font-size: 3.55cqw;
+  line-height: 1.4;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.rp-role {
+  display: flex;
+  align-items: center;
+  gap: 0.8cqw;
+  border-radius: 5cqw;
+  color: #c7532c;
+  background: #ffefe9;
+  padding: 0.45cqw 1.5cqw;
+  font-size: 2.35cqw;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+.rp-role .profile-art {
+  width: 2.7cqw;
+  height: 2.7cqw;
+  --art-light: #ff934b;
+  --art-dark: #f06427;
+}
+.rp-edit {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 1cqw;
+  padding: 1cqw 2.6cqw;
+  min-height: 30px;
+  border: 0;
+  border-radius: 6cqw;
+  background: #eaf4ff;
+  color: var(--ra-ink);
+  font-size: 2.3cqw;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.rp-edit .icon {
+  width: 2.4cqw;
+  height: 2.4cqw;
+}
+.rp-identity-copy > p {
+  display: flex;
+  align-items: flex-start;
+  gap: 1.5cqw;
+  color: #7e88a0;
+  font-size: 2.5cqw;
+  margin: 0.9cqw 0 0;
+  line-height: 1.55;
+}
+.rp-identity-copy > p .icon {
+  width: 2.8cqw;
+  height: 2.8cqw;
+  margin: 0.3cqw 0 0;
+  color: #858c9e;
+}
+.rp-results {
+  padding: 2.5cqw 2.7cqw 3.1cqw;
+  background: linear-gradient(125deg, #fffaf5, #fffcfa);
+}
+.rp-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-bottom: 2.6cqw;
+}
+.rp-section-heading h2 {
+  margin: 0;
+  font-size: 3.55cqw;
+  line-height: 1.4;
+}
+.rp-more {
+  display: flex;
+  align-items: center;
+  gap: 0.8cqw;
+  background: none;
+  border: 0;
+  padding: 0;
+  min-height: 26px;
+  color: #5a6986;
+  font-size: 2.4cqw;
+  white-space: nowrap;
+}
+.rp-more .icon {
+  width: 2.3cqw;
+  height: 2.3cqw;
+}
+.rp-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1.12fr;
+}
+.rp-stat {
+  display: flex;
+  align-items: center;
+  gap: 2.2cqw;
+  padding: 0;
+  border: 0;
+  color: var(--ra-ink);
+  background: none;
+  min-width: 0;
+  text-align: left;
+}
+.rp-stat + .rp-stat {
+  border-left: 1px solid #d8dce7;
+  padding-left: 2.8cqw;
+}
+.rp-stat-icon {
+  flex-shrink: 0;
+  width: 9.5cqw;
+  height: 9.5cqw;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+}
+.rp-stat-icon .profile-art {
+  width: 5cqw;
+  height: 5cqw;
+}
+.rp-stat-copy {
+  display: grid;
+  min-width: 0;
+}
+.rp-stat-copy > span:first-child {
+  display: block;
+  font-size: 2.25cqw;
+  line-height: 1.55;
+  white-space: nowrap;
+  color: #5f6d89;
+}
+.rp-stat-value {
+  display: flex;
+  align-items: baseline;
+  gap: 0.8cqw;
+  font-size: 2.5cqw;
+  white-space: nowrap;
+}
+.rp-stat-value strong {
+  font-size: 5.5cqw;
+  line-height: 1.25;
+  letter-spacing: -0.03em;
+}
+.rp-stat-value .icon {
+  width: 2.2cqw;
+  height: 2.2cqw;
+  align-self: center;
+  margin-left: 0.6cqw;
+}
+.requester-profile .mint {
+  background: #e1f8ee;
+  color: #11b781;
+  --art-light: #44d5a0;
+  --art-dark: #02aa6c;
+}
+.requester-profile .pink {
+  background: #ffe7e7;
+  color: #f24e72;
+  --art-light: #ff8f7b;
+  --art-dark: #ff3c32;
+}
+.requester-profile .orange {
+  background: #ffeddd;
+  color: #ff8c16;
+  --art-light: #ffa847;
+  --art-dark: #ff790a;
+}
+.rp-menu {
+  padding: 1cqw 2.8cqw;
+}
+.rp-menu-row {
+  display: flex;
+  align-items: center;
+  gap: 2.8cqw;
+  position: relative;
+  width: 100%;
+  min-height: 14cqw;
+  padding: clamp(12px, 2.6cqw, 16px) 0;
+  text-align: left;
+  color: var(--ra-ink);
+  border: 0;
+  background: none;
+}
+.rp-menu-row + .rp-menu-row::before {
+  content: '';
+  height: 1px;
+  background: #edf2fa;
+  position: absolute;
+  top: 0;
+  left: 10.7cqw;
+  right: 0;
+}
+.rp-menu-icon {
+  flex-shrink: 0;
+  width: 8cqw;
+  height: 8cqw;
+  border-radius: 2cqw;
+  display: grid;
+  place-items: center;
+}
+.rp-menu-icon .profile-art,
+.rp-menu-icon .icon {
+  width: 5.3cqw;
+  height: 5.3cqw;
+}
+.rp-menu-icon.blue {
+  background: #e4efff;
+  --art-light: #90c5ff;
+  --art-dark: #3b8bfa;
+}
+.rp-menu-icon.pink {
+  background: #ffe7eb;
+}
+.rp-menu-copy {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+.rp-menu-copy strong {
+  font-size: 3.1cqw;
+}
+.rp-menu-copy > span {
+  font-size: 2.5cqw;
+  line-height: 1.55;
+  color: #7b86a0;
+}
+.rp-menu-row > .icon {
+  width: 2.8cqw;
+  height: 2.8cqw;
+  color: #858ca1;
+}
+.rp-footer {
+  position: relative;
+  min-height: 24cqw;
+  padding: 6cqw 0 9cqw;
+  text-align: center;
+  background:
+    linear-gradient(#fcfbf9 0%, #fcfbf955 65%, #fcfbf944),
+    url('/images/requester-profile-header.webp') center bottom / cover no-repeat;
+}
+.rp-footer p {
+  display: inline-block;
+  color: #a2a9b8;
+  font-size: 2.7cqw;
+  letter-spacing: 0.25em;
+  line-height: 1.6;
+  transform: rotate(-10deg);
+  margin: 0;
+}
+.rp-footer p span {
+  margin-left: 7cqw;
+}
+.rp-footer p::after {
+  content: '';
+  display: block;
+  border-top: 1px solid #a4acba;
+  width: 4.5cqw;
+  margin: 1cqw 0 0 9cqw;
+}
+@media (max-width: 400px) {
+  .rb-org-name {
+    font-size: 14px;
+  }
+  .rb-org p {
+    font-size: 10px;
+  }
+  .rb-view-records {
+    font-size: 10px;
+  }
+  .rb-metric-heading {
+    font-size: 10px;
+    gap: 0.6cqw;
+  }
+  .rb-metric-icon {
+    width: 5cqw;
+    height: 5cqw;
+  }
+  .rb-metric-value {
+    margin-left: 5.6cqw;
+    font-size: 11px;
+  }
+  .rb-metric-value strong {
+    font-size: 22px;
+  }
+  .rb-summary-note {
+    font-size: 10px;
+  }
+  .rb-tab {
+    font-size: 15px;
+  }
+  .rb-tabs {
+    min-height: 40px;
+  }
+  .rb-filter {
+    font-size: 12px;
+    min-height: 30px;
+  }
+  .rb-record h2 {
+    font-size: 14px;
+  }
+  .rb-record-service {
+    font-size: 12px;
+  }
+  .rb-record-details small {
+    font-size: 10px;
+  }
+  .rb-record-details strong {
+    font-size: 12px;
+  }
+  .rb-record-state {
+    font-size: 10px;
+  }
+  .rb-record-action {
+    font-size: 11px;
+    min-height: 30px;
+  }
+  .rb-record-details {
+    width: calc(100% - 22cqw);
+  }
+  .rb-record-details > div {
+    gap: 0.8cqw;
+  }
+  .rb-record-details > div + div {
+    padding-left: 1.3cqw;
+  }
+  .rp-name-row h2 {
+    font-size: 15px;
+  }
+  .rp-role,
+  .rp-edit {
+    font-size: 10px;
+  }
+  .rp-identity-copy > p {
+    font-size: 10px;
+  }
+  .rp-section-heading h2 {
+    font-size: 15px;
+  }
+  .rp-more {
+    font-size: 10px;
+  }
+  .rp-stat {
+    gap: 1.3cqw;
+  }
+  .rp-stat + .rp-stat {
+    padding-left: 1.3cqw;
+  }
+  .rp-stat-copy > span:first-child {
+    font-size: 9px;
+  }
+  .rp-stat-value {
+    gap: 0.4cqw;
+    font-size: 10px;
+  }
+  .rp-stat-value strong {
+    font-size: 22px;
+  }
+  .rp-menu-copy strong {
+    font-size: 14px;
+  }
+  .rp-menu-copy > span {
+    font-size: 11px;
+  }
+  .rp-menu-row {
+    min-height: 62px;
+  }
+}
+.large-text .rb-org {
+  flex-wrap: wrap;
+}
+.large-text .rb-org-name,
+.large-text .rp-name-row h2,
+.large-text .rb-record h2 {
+  font-size: 18px;
+}
+.large-text .rb-metrics {
+  grid-template-columns: 1fr;
+}
+.large-text .rb-metric-heading {
+  font-size: 15px;
+}
+.large-text .rb-metric-value {
+  margin-left: 8cqw;
+}
+.large-text .rb-metric-value strong {
+  font-size: 28px;
+}
+.large-text .rb-summary-note,
+.large-text .rb-record-service,
+.large-text .rb-record-details small,
+.large-text .rp-identity-copy > p,
+.large-text .rp-menu-copy > span {
+  font-size: 13px;
+}
+.large-text .rb-record {
+  padding-bottom: 48px;
+}
+.large-text .rb-record-details {
+  width: 100%;
+}
+.large-text .rb-record h2 {
+  padding-top: 26px;
+  margin-right: 0;
+}
+.large-text .rb-record-action {
+  bottom: 7px;
+  font-size: 14px;
+}
+.large-text .rb-record-service {
+  margin-right: 0;
+}
+.large-text .rp-stats {
+  grid-template-columns: 1fr;
+  gap: 15px;
+}
+.large-text .rp-stat + .rp-stat {
+  border: 0;
+  padding-left: 0;
+}
+.large-text .rp-stat-copy > span:first-child {
+  font-size: 13px;
+}
+.large-text .rp-stat-value strong {
+  font-size: 28px;
+}
+.large-text .rp-stat-value {
+  font-size: 14px;
+}
+.large-text .rp-menu-copy strong {
+  font-size: 17px;
+}
+.large-text .rp-name-row {
+  align-items: flex-start;
+}
+.large-text .rp-edit {
+  margin-left: 0;
+  font-size: 12px;
+}

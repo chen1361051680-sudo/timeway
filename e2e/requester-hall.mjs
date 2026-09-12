@@ -101,11 +101,12 @@ try {
   await page.getByRole('button', { name: '完成处理', exact: true }).click();
   await page.getByRole('button', { name: '返回', exact: true }).click();
   await expect(page.locator('.requester-count')).toHaveText('2');
-  await page.getByRole('button', { name: '消息通知', exact: true }).click();
+  await page.locator('.bottom-nav a[href="#profile"]').click();
+  await page.locator('.rp-menu-row[data-action=notices]').click();
   await expect(page.getByRole('dialog')).toBeVisible();
   await page.getByRole('button', { name: '全部标为已读', exact: true }).click();
   await page.getByRole('button', { name: '关闭弹窗', exact: true }).click();
-  await expect(page.locator('.requester-unread')).toHaveCount(0);
+  await page.locator('.bottom-nav a[href="#services"]').click();
   await page.getByRole('tab', { name: '已发布需求', exact: true }).click();
   await page.getByRole('link', { name: '发布需求', exact: true }).click();
   await expect(page).toHaveURL(/#publish\/help$/);

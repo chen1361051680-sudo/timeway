@@ -1,0 +1,67 @@
+/* Shared geometry for the three illustrated landing pages, for both roles. */
+.app-shell:is(
+  .volunteer-hall,
+  .volunteer-bank,
+  .volunteer-profile,
+  .requester-hall,
+  .requester-bank,
+  .requester-profile
+) {
+  --page-hero-height: clamp(104px, 26cqw, 135.2px);
+  --page-hero-overlap: 3cqw;
+  --page-hero-top: 4.5cqw;
+  --page-hero-inset: 4.7cqw;
+  --page-card-inset: 2cqw;
+  --page-card-radius: 4cqw;
+}
+.app-shell :is(.hall-header, .bank-header, .profile-cover, .requester-hall-header, .ra-header, .rp-cover) {
+  height: var(--page-hero-height);
+  padding: var(--page-hero-top) var(--page-hero-inset) 0;
+  background-size: cover;
+}
+.app-shell :is(.hall-header, .bank-header, .profile-cover, .requester-hall-header, .ra-header, .rp-cover) h1 {
+  margin: 0;
+  font-size: clamp(25px, 5.5cqw, 29px);
+  line-height: 1.3;
+  font-weight: 600;
+  letter-spacing: 0.035em;
+}
+.app-shell :is(.hall-header, .bank-header) {
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 0;
+}
+.app-shell :is(.hall-header, .bank-header, .profile-cover, .requester-hall-header, .ra-header, .rp-cover) > p:not(.profile-cover-note) {
+  margin: 6px 0 0;
+  font-size: max(11px, 2.3cqw);
+  font-weight: 400;
+  line-height: 1.55;
+  letter-spacing: 0.04em;
+  color: #334e6d;
+}
+.app-shell :is(.profile-settings, .rp-settings) {
+  top: calc(var(--page-hero-top) - 5px);
+  right: 3cqw;
+}
+.app-shell :is(.profile-settings, .rp-settings) .icon {
+  width: 23px;
+  height: 23px;
+}
+.app-shell .profile-cover-note {
+  top: var(--page-hero-top);
+  right: 16cqw;
+}
+.app-shell :is(.hall-sheet, .bank-account-card, .requester-hall-sheet, .rb-summary) {
+  margin-top: calc(-1 * var(--page-hero-overlap));
+  margin-inline: var(--page-card-inset);
+  border-top-left-radius: var(--page-card-radius);
+  border-top-right-radius: var(--page-card-radius);
+}
+.app-shell :is(.profile-body, .rp-body) {
+  margin-top: calc(-1 * var(--page-hero-overlap));
+  padding-inline: var(--page-card-inset);
+}
+.app-shell :is(.profile-identity, .rp-identity) {
+  border-top-left-radius: var(--page-card-radius);
+  border-top-right-radius: var(--page-card-radius);
+}

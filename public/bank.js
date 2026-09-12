@@ -90,7 +90,7 @@ export function bankContent({ bank, offers, filter: f, tab, bookingStatus }) {
     (b) => (!f.org || b.owner === f.org) && (!bookingStatus || b.status === bookingStatus),
   );
   const filtered = f.date || f.minutes || f.sort;
-  return `<header class="bank-header"><h1>时间银行</h1></header>
+  return `<header class="bank-header"><h1>时间银行</h1><p>记录每一份付出 让温暖在时间里延续</p></header>
     <section class="bank-account-card" aria-label="时间账户">
       <div class="bank-account-top"><span class="bank-org-emblem"><svg viewBox="0 0 48 48" aria-hidden="true"><path fill="#f28b48" d="M4 21 21 6q3-3 6 0l17 15q2 3-2 4h-3v16H9V25H6q-4-1-2-4Z"/><path d="M20 23c-3 0-4 3-4 6s3 4 5 2 2-7-1-8Zm-2-5v1m4-2v2m7 6c3 0 4 3 3 6s-4 4-5 1-1-6 2-7Zm-1-5v1m4 0v2" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/></svg></span>${btn(`<span class="bank-org-name">${esc(orgName)}${icon('chevron')}</span><small>切换机构查看时间账户</small>`, 'bank-filter', 'org', 'bank-org-switch', 'aria-label="切换机构查看时间账户" aria-haspopup="dialog"')}${btn(`${bankIcon('ledger')}<span>收支明细</span>${icon('arrow')}`, 'bank-ledger', '', 'bank-ledger-button', 'aria-haspopup="dialog"')}</div>
       <div class="bank-account-inner"><div class="bank-metrics">

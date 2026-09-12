@@ -53,15 +53,22 @@ async function fillTask(p, kind) {
   await visit(p, 'publish/' + kind);
   await p.getByLabel('服务标题').fill(kind === 'help' ? '陪伴交流测试需求' : '生活协助兑换测试');
   await p.getByLabel('具体服务内容').fill('测试业务流程，陪伴老人交流一小时。');
+  await p.locator('.pub-more > summary').click();
   await p.getByLabel('受助对象／适用人群').fill('测试受助对象');
+  await p.locator('.pub-address-details > summary').click();
   await p.getByLabel('详细地址（仅相关人员可见）').fill('测试隐私地址 301');
   await p.getByLabel('机构联系人').fill('测试联系人');
-  await p.getByLabel('纬度（可选）').fill('30.25');
-  await p.getByLabel('经度（可选）').fill('120.15');
-  if (kind === 'redeem') await p.getByLabel('兑换占用分钟').fill('30');
-  await p.getByRole('button', { name: '发布服务', exact: true }).click();
+  if (kind === 'redeem') {
+    await p.getByLabel('兑换所需小时').fill('0');
+    await p.getByLabel('另加分钟').fill('30');
+  }
+  await p.getByRole('button', { name: '预览并发布', exact: true }).click();
+  await p.getByRole('button', { name: '确认发布', exact: true }).click();
   await expect(p).toHaveURL(/#task\//);
-  return p.url().split('#task/')[1];
+  const id=p.url().split('#task/')[1];
+  const {domain,store}=server.context;
+  domain.taskAction(store.user(store.get('task',id).owner),id,{action:'location',lat:30.25,lng:120.15,reason:'隔离测试坐标补录'});
+  return id;
 }
 try {
   const org = await page(),

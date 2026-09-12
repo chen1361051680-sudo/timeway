@@ -11,6 +11,7 @@ import {
   cellFor,
 } from './common.mjs';
 import { routeFits } from './routing.mjs';
+import { normalizePlace } from './place.mjs';
 
 export class Domain {
   constructor(store, adapters = { route: () => ({ minutes: null, returnMinutes: null, distance: null }) }) {
@@ -71,12 +72,12 @@ export class Domain {
       title: text(b.title, '标题', 100, !draft),
       category: text(b.category || '陪伴交流', '服务类型', 30),
       description: text(b.description, '服务内容', 3000, !draft),
-      recipient: text(b.recipient, '受助对象或适用人群', 300, !draft),
+      recipient: text(b.recipient || '', '受助对象或适用人群', 300, false),
       region: text(b.region || u.region, '服务区域', 100, !draft),
       address: text(b.address, '详细服务地址', 300, !draft),
       meeting: text(b.meeting || '', '集合与到达说明', 500, false),
       contact: text(b.contact || u.contact || u.name, '联系人', 80, !draft),
-      phone: text(b.phone || u.phone, '联系电话', 30, !draft),
+      phone: text(b.phone || u.contactPhone || u.phone, '联系电话', 30, !draft),
       requirements: text(b.requirements || '', '能力与注意事项', 500, false),
       start: date(b.start || new Date(Date.now() + 86400000), '开始时间'),
       end: date(b.end || new Date(Date.now() + 90000000), '结束时间'),
@@ -88,7 +89,7 @@ export class Domain {
     };
     check(t.end > t.start, '结束时间必须晚于开始时间');
     check(t.deadline <= t.start, '报名截止时间不得晚于开始时间');
-    if (!draft && !old) {
+    if (!draft && (!old || old.status === 'draft')) {
       check(t.start > now(), '新发布服务时间必须晚于当前时间');
       check(t.deadline > now(), '新发布服务的报名截止时间必须晚于当前时间');
     }
@@ -108,7 +109,10 @@ export class Domain {
     );
     t.lat = lat;
     t.lng = lng;
-    t.cell = lat === null ? null : cellFor(lat, lng);
+    if (b.place != null) Object.assign(t, normalizePlace(b.place));
+    else if (b.place === null || lat !== old?.lat || lng !== old?.lng) delete t.place;
+    t.cell = t.lat === null ? null : cellFor(t.lat, t.lng);
+    if (!draft) check(/^[+\d][\d\s()-]{5,29}$/.test(t.phone), '请填写有效的联系电话');
     return t;
   }
   createTask(u, b) {
@@ -189,6 +193,7 @@ export class Domain {
       const before = { ...t },
         reason = text(b.reason, '地点核实依据', 1000);
       Object.assign(t, { lat, lng, cell: cellFor(lat, lng), revision: t.revision + 1 });
+      delete t.place;
       this.s.put('task', t);
       for (const booking of this.bookings(id)) {
         Object.assign(booking, { lat, lng, cell: t.cell });
@@ -807,7 +812,7 @@ export class Domain {
       hasPendingChange: !!t.pending,
     };
     if (!full) {
-      for (const k of ['address', 'meeting', 'contact', 'phone', 'recipient', 'lat', 'lng']) delete view[k];
+      for (const k of ['address', 'meeting', 'contact', 'phone', 'recipient', 'lat', 'lng', 'place']) delete view[k];
     }
     if (t.pending) {
       view.pending = full ? t.pending : null;

@@ -285,7 +285,7 @@ function todoCard(item) {
   </a>`;
 }
 
-export function requesterHall({ tasks, todo = false, filter = '', todoFilter = '', unread = false }) {
+export function requesterHall({ tasks, todo = false, filter = '', todoFilter = '' }) {
   const items = requesterTodos(tasks);
   const counts = Object.fromEntries(
     groups.map(([id]) => [id, items.filter((i) => i.type === id).reduce((sum, i) => sum + i.count, 0)]),
@@ -313,7 +313,7 @@ export function requesterHall({ tasks, todo = false, filter = '', todoFilter = '
             statusOrder[requesterStatus(a).label] - statusOrder[requesterStatus(b).label] ||
             String(a.start).localeCompare(String(b.start)),
         );
-  return `<header class="requester-hall-header"><h1>服务大厅</h1><p>汇聚爱心 · 服务社区 · 让温暖一直在路上</p><span class="requester-header-note">让善意<br>连接每一个社区</span>${btn(`${icon('bell')}${unread ? '<i class="requester-unread"></i>' : ''}`, 'notices', '', 'requester-notices', 'aria-label="消息通知"')}</header>
+  return `<header class="requester-hall-header"><h1>服务大厅</h1><p>发布身边的需要 让善意在社区相遇</p></header>
     <section class="requester-hall-sheet" aria-label="需求方服务大厅">
       <div class="requester-tabs" role="tablist" aria-label="需求管理">
       ${btn('已发布需求', 'service-tab', 'discover', `requester-tab${todo ? '' : ' active'}`, `id="requester-published-tab" role="tab" aria-selected="${!todo}" aria-controls="requester-panel"`)}

@@ -83,7 +83,7 @@ export function hallContent({ tasks, own, filter: f, mine, environment }) {
   const active = Object.entries(f).filter(
     ([key, value]) => value && !['sort', 'status'].includes(key),
   ).length;
-  return `<header class="hall-header"><h1>服务大厅</h1></header>
+  return `<header class="hall-header"><h1>服务大厅</h1><p>发现身边的需要 让善意从这里出发</p></header>
     <section class="hall-sheet" aria-label="志愿者服务大厅">
       <div class="hall-tabs" role="tablist" aria-label="服务列表">
         ${btn('发现需求', 'service-tab', 'discover', `hall-tab${!mine ? ' active' : ''}`, `role="tab" aria-selected="${!mine}"`)}

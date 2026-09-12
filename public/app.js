@@ -21,8 +21,11 @@ import {
 } from './ui.js';
 import { hallContent, hallCategories } from './hall.js';
 import { requesterHall } from './requester-hall.js';
+import { requesterBank, requesterProfile } from './requester-account.js';
 import { volunteerProfile, profileEditor, accountSettings } from './profile.js';
 import { bankContent, bankAccount, bankLedger } from './bank.js';
+import { newPublication, publishForm, syncPublication, publicationData, validatePublication, publicationPreview } from './publish.js';
+import { choosePlace, mountPlacePreview } from './place-picker.js';
 
 const root = document.querySelector('#app'),
   dialog = document.querySelector('#dialog');
@@ -38,6 +41,8 @@ const state = {
   filter: {},
   requesterStatus: '',
   requesterTodoFilter: '',
+  requesterBankFilter: {},
+  requesterBookingWorkOnly: false,
   mapScope: 'all',
   city: null,
   mapRegion: null,
@@ -64,7 +69,7 @@ function toast(message) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => node.classList.remove('visible'), 4500);
 }
-async function api(path, method = 'GET', body) {
+async function api(path, method = 'GET', body, idempotencyKey) {
   if (body) {
     body = { ...body };
     for (const key of ['start', 'end', 'deadline'])
@@ -79,7 +84,7 @@ async function api(path, method = 'GET', body) {
     headers: {
       ...(body ? { 'Content-Type': 'application/json' } : {}),
       ...(state.csrf ? { 'X-CSRF-Token': state.csrf } : {}),
-      ...(body && method !== 'GET' ? { 'Idempotency-Key': crypto.randomUUID() } : {}),
+      ...(body && method !== 'GET' ? { 'Idempotency-Key': idempotencyKey || crypto.randomUUID() } : {}),
     },
     ...(body ? { body: JSON.stringify(body) } : {}),
   });
@@ -117,6 +122,8 @@ function modal(title, html, onSubmit, label = '确认', accountStyle = false) {
   if (!mayDiscardProfileForm()) return;
   dialog.classList.remove('login-dialog');
   dialog.classList.toggle('account-dialog', accountStyle);
+  dialog.classList.toggle('profile-editor-dialog', accountStyle && title === '编辑资料');
+  dialog.classList.toggle('account-settings-dialog', accountStyle && title === '设置');
   dialog.innerHTML = `<div class="modal-head"><h2 id="dialog-title">${esc(title)}</h2>${btn(icon('close'), 'close', '', 'icon-button', 'aria-label="关闭弹窗"')}</div>${onSubmit ? `<form id="modal-form">${accountStyle ? '<div class="account-body">' + html + '</div><div class="account-footer">' : html}<p class="form-error" role="alert"></p><button class="primary wide" type="submit">${esc(label)}</button>${accountStyle ? '</div>' : ''}</form>` : html}`;
   modalSubmit = onSubmit;
   const guarded = accountStyle || ['维护资料', '账户与显示设置'].includes(title);
@@ -311,7 +318,7 @@ async function servicesPage() {
       'volunteer-hall',
     );
   }
-  const [tasks, notices] = await Promise.all([api('/tasks?kind=help&scope=mine'), api('/notices')]);
+  const tasks = await api('/tasks?kind=help&scope=mine');
   state.list = tasks;
   return shell(
     requesterHall({
@@ -319,7 +326,6 @@ async function servicesPage() {
       todo: state.tab === 'todo',
       filter: state.requesterStatus,
       todoFilter: state.requesterTodoFilter,
-      unread: notices.some((n) => !n.read),
     }),
     'services',
     '',
@@ -357,7 +363,7 @@ function matchesStatus(t, s) {
 }
 function recordBlock(r, org) {
   if (!r) return '';
-  return `<div class="record-block"><div class="between"><h3>服务核实记录</h3>${status(r.status)}</div><p>${dateTime(r.start)} — ${dateTime(r.end)}</p><p class="pre">${esc(r.content)}</p><p>提交 ${r.submitted} 分钟 · 已确认 ${r.confirmed} 分钟 · ${r.recipients || 0} 受助人次</p>${r.note ? `<p>人工说明：${esc(r.note)}</p>` : ''}${r.reason ? `<p>核实说明：${esc(r.reason)}</p>` : ''}${r.dispute ? `<p class="notice">异议：${esc(r.dispute)}</p>` : ''}<div class="actions">${org ? (r.status === 'submitted' ? btn('核实服务', 'confirm-record', r.id, 'primary') : r.status === 'disputed' ? btn('处理异议', 'resolve-record', r.id, 'primary') : btn('更正记录', 'correct-record', r.id)) + (['confirmed', 'disputed'].includes(r.status) ? btn('撤销无效记录', 'revoke-record', r.id, 'text-button') : '') : r.status !== 'disputed' ? btn('对结果有异议', 'dispute-record', r.id) : ''}${btn('查看变更记录', 'audit', r.id, 'text-button')}</div></div>`;
+  return `<div class="record-block requester-task-focus" data-record-id="${esc(r.id)}" tabindex="-1"><div class="between"><h3>服务核实记录</h3>${status(r.status)}</div><p>${dateTime(r.start)} — ${dateTime(r.end)}</p><p class="pre">${esc(r.content)}</p><p>提交 ${r.submitted} 分钟 · 已确认 ${r.confirmed} 分钟 · ${r.recipients || 0} 受助人次</p>${r.note ? `<p>人工说明：${esc(r.note)}</p>` : ''}${r.reason ? `<p>核实说明：${esc(r.reason)}</p>` : ''}${r.dispute ? `<p class="notice">异议：${esc(r.dispute)}</p>` : ''}<div class="actions">${org ? (r.status === 'submitted' ? btn('核实服务', 'confirm-record', r.id, 'primary') : r.status === 'disputed' ? btn('处理异议', 'resolve-record', r.id, 'primary') : btn('更正记录', 'correct-record', r.id)) + (['confirmed', 'disputed'].includes(r.status) ? btn('撤销无效记录', 'revoke-record', r.id, 'text-button') : '') : r.status !== 'disputed' ? btn('对结果有异议', 'dispute-record', r.id) : ''}${btn('查看变更记录', 'audit', r.id, 'text-button')}</div></div>`;
 }
 function changeBlock(t, a) {
   if (!t.pending) return '';
@@ -376,7 +382,7 @@ function requesterManagement(t) {
   <section class="card requester-task-focus" data-task-section="management" tabindex="-1"><h2>报名与服务管理</h2>${t.applications.length ? t.applications.map((a) => `<article ${focus(a.status === 'pending' ? 'applications' : a.status === 'disputed' ? 'disputes' : 'records')}><div class="between"><h3>${esc(a.volunteer.name)}</h3>${status(a.status)}</div><p>${esc(a.volunteer.skills || '未填写擅长服务')}</p><p>${esc(a.message || '无报名留言')}</p>${a.reason ? `<p>${esc(a.reason)}</p>` : ''}${a.status === 'pending' ? `<div class="actions">${btn('确认参与', 'accept-app', a.id, 'primary')}${btn('不通过', 'reject-app', a.id)}</div>` : ''}${a.withdrawalHandled ? `<p>退出处理：${esc(a.withdrawalHandled.reason)}</p>` : ''}${a.changeResolution ? `<p>时间调整：${a.changeResolution.action === 'accept-request-change' ? '已同意' : '未通过'} ${esc(a.changeResolution.reason)}</p>` : ''}${recordBlock(a.record, true)}</article>`).join('') : empty('暂时没有人报名', '发布后可在这里确认参与人员。')}</section>`;
 }
 function focusTaskSection() {
-  const [page, , section] = current().split('/');
+  const [page, , section, recordId] = current().split('/');
   if (
     page !== 'task' ||
     !['applications', 'arrangement', 'records', 'other', 'disputes', 'changes', 'withdrawals'].includes(
@@ -384,7 +390,10 @@ function focusTaskSection() {
     )
   )
     return;
-  const element =
+  const exactRecord = recordId
+    ? [...root.querySelectorAll('[data-record-id]')].find((el) => el.dataset.recordId === recordId)
+    : null;
+  const element = exactRecord ||
     (section === 'records'
       ? root.querySelector('[data-task-section="records"]:has([data-action="confirm-record"])')
       : null) ||
@@ -457,23 +466,31 @@ async function publishPage(id) {
   if (!requester()) throw new Error('仅需求方可以发布服务');
   const old = !['help', 'redeem'].includes(id) ? await api('/tasks/' + id) : null;
   state.editTask = old;
-  const t = old || {
-    kind: id || 'help',
-    region: state.user.region,
-    contact: state.user.contact,
-    phone: state.user.phone,
-    capacity: 1,
-    minutes: 60,
-    recipients: 1,
-    start: new Date(Date.now() + 86400000).toISOString(),
-    end: new Date(Date.now() + 90000000).toISOString(),
-  };
-  return shell(
-    `<form id="publish-form" class="publish-form"><section class="card"><h2>${t.kind === 'redeem' ? '兑换服务' : '帮扶需求'}信息</h2>${field('title', '服务标题', t.title)}${select('category', '服务类型', categories, t.category)}${field('description', '具体服务内容', t.description, 'textarea')}${field('recipient', '受助对象／适用人群', t.recipient)}${field('requirements', '能力要求与注意事项', t.requirements, 'textarea', false)}</section><section class="card"><h2>服务地点</h2><p class="notice">地图选址待接入，请手动填写。准确坐标可稍后补充；未填坐标不会虚构地图成果。</p>${field('region', '公开区域（不含门牌）', t.region)}${field('address', '详细地址（仅相关人员可见）', t.address)}${field('meeting', '集合和到达说明', t.meeting, 'textarea', false)}<div class="two-col">${field('lat', '纬度（可选）', t.lat, 'number', false, 'step="any" min="-85" max="85"')}${field('lng', '经度（可选）', t.lng, 'number', false, 'step="any" min="-180" max="180"')}</div></section><section class="card"><h2>时间与名额</h2>${field('start', '开始时间', localTime(t.start), 'datetime-local')}${field('end', '结束时间', localTime(t.end), 'datetime-local')}${field('deadline', '报名截止', localTime(t.deadline || t.start), 'datetime-local')}<div class="two-col">${field('minutes', t.kind === 'redeem' ? '兑换占用分钟' : '预计有效分钟', t.minutes, 'number', true, 'min="1" max="1440"')}${field('capacity', t.kind === 'redeem' ? '预约名额' : '志愿者人数', t.capacity, 'number', true, 'min="1" max="200"')}</div>${field('recipients', '预计受助人次', t.recipients, 'number', true, 'min="1" max="10000"')}</section><section class="card"><h2>联系人</h2>${field('contact', '机构联系人', t.contact)}${field('phone', '联系电话', t.phone, 'tel')}<p class="notice">服务开始或完成后，通过记录核实与更正处理时长。已有确认人员的核心变更需逐一确认。</p><p class="form-error" role="alert"></p><div class="actions"><button class="primary" name="mode" value="published">${old ? '保存修改' : '发布服务'}</button>${!old || old.status === 'draft' ? '<button class="secondary" name="mode" value="draft" formnovalidate>保存草稿</button>' : ''}${btn('公开预览', 'preview-task')}</div></section></form>`,
-    t.kind === 'redeem' ? 'bank' : 'services',
-    old ? '编辑服务' : '发布服务',
-    true,
-  );
+  const t = old || newPublication(id || 'help', state.user);
+  return shell(publishForm(t, state.user, old), t.kind === 'redeem' ? 'bank' : 'services', old ? '编辑服务' : t.kind === 'redeem' ? '发布兑换服务' : '发布需求', true, 'publish-shell');
+}
+let publicationAttempt;
+async function savePublication(mode) {
+  const form=root.querySelector('#publish-form');
+  if (!form || form.dataset.saving) return;
+  if (mode !== 'draft' && !validatePublication(form,state.editTask)) return;
+  const old=state.editTask;
+  const body={...publicationData(form), kind:old?.kind || current().split('/')[1] || 'help', status:old && old.status !== 'draft' ? old.status : mode, revision:old?.revision};
+  const fingerprint=JSON.stringify(body);
+  if (publicationAttempt?.fingerprint !== fingerprint) publicationAttempt={fingerprint,key:crypto.randomUUID()};
+  form.dataset.saving='1';
+  try {
+    const result=await api('/tasks'+(old ? '/'+old.id : ''),old ? 'PUT' : 'POST',body,publicationAttempt.key);
+    publicationAttempt=null; dirty=false; dialog.close();
+    go('task/'+result.id);
+    toast(result.hasPendingChange ? '已通知参与者确认安排变更' : mode === 'draft' ? '草稿已保存，可稍后继续编辑' : '服务内容已保存');
+  } finally { delete form.dataset.saving; }
+}
+function previewPublication() {
+  const form=root.querySelector('#publish-form');
+  if (!form || !validatePublication(form,state.editTask)) return;
+  const b={...publicationData(form),kind:state.editTask?.kind || current().split('/')[1]};
+  modal('发布前预览',publicationPreview(b,state.user,state.editTask),()=>savePublication('published'),state.editTask && state.editTask.status !== 'draft' ? '确认保存修改' : '确认发布');
 }
 
 async function openBankLedger() {
@@ -512,76 +529,11 @@ async function bankPage() {
     }
     return html;
   }
-  const bank = await api('/bank');
+  const [bank, tasks] = await Promise.all([api('/bank'), api('/tasks?scope=mine')]);
   state.bank = bank;
-  const btab = state.bankTab;
-  const offers = await api(
-    '/tasks?' +
-      new URLSearchParams({ kind: 'redeem', ...state.filter, ...(requester() ? { scope: 'mine' } : {}) }),
-  );
-  const totals = bank.accounts.reduce(
-    (s, a) => ({
-      available: s.available + a.available,
-      held: s.held + a.held,
-      pending: s.pending + a.pending,
-      used: s.used + a.used,
-    }),
-    { available: 0, held: 0, pending: 0, used: 0 },
-  );
-  const hero = requester()
-    ? `<p>本机构累计确认发放</p><strong>${hours(bank.issued)} <small>小时</small></strong><div class="bank-mini"><span>待核实 ${hours(bank.pending)} 小时</span><span>待处理兑换 ${bank.bookings.filter((b) => ['pending', 'disputed', 'reschedule'].includes(b.status)).length} 笔</span></div>`
-    : `<p>可用时间权益</p><strong>${hours(totals.available)} <small>小时</small></strong><div class="bank-mini"><span>待确认 ${hours(totals.pending)} 小时</span><span>兑换占用 ${hours(totals.held)} 小时</span></div><small>按发放机构分别使用 · 服务与休息时间分开记录</small>`;
-  const options = requester()
-    ? [
-        ['ledger', '发放记录'],
-        ['offers', '兑换服务'],
-        ['bookings', '兑换预约'],
-      ]
-    : [
-        ['offers', '可兑换服务'],
-        ['bookings', '我的兑换'],
-        ['ledger', '时间明细'],
-      ];
-  let content = '';
-  if (btab === 'offers')
-    content = `${requester() ? link(icon('plus') + ' 新增兑换服务', 'publish/redeem', 'primary wide') : ''}${filters(select('org', '服务机构', [['', '全部机构'], ...bank.accounts.map((a) => [a.orgId, a.orgName])], state.filter.org))}${offers.length ? offers.map(taskCard).join('') : empty('暂无可兑换服务', '机构发布兑换项目后，将在这里展示。')}`;
-  if (btab === 'bookings')
-    content = `${select('booking-status', '预约状态', [['', '全部'], ...['pending', 'accepted', 'reschedule', 'result_pending', 'disputed', 'completed', 'cancelled'].map((s) => [s, labels[s]])], state.bookingStatus)}${
-      bank.bookings
-        .filter((b) => !state.bookingStatus || b.status === state.bookingStatus)
-        .map(bookingCard)
-        .join('') || empty('暂无兑换记录', '预约后可在这里跟进安排与履约结果。')
-    }`;
-  if (btab === 'ledger')
-    content = `${select(
-      'ledger-type',
-      '流水类型',
-      [
-        ['', '全部'],
-        ['credit', '服务入账'],
-        ['redeem', '兑换扣除'],
-        ['correction', '时长更正'],
-        ['refund', '兑换退回'],
-      ],
-      state.ledgerType,
-    )}${field('ledger-date', '记录日期', state.ledgerDate || '', 'date', false)}${
-      bank.ledger
-        .filter(
-          (r) =>
-            (!state.ledgerType || r.kind === state.ledgerType) &&
-            (!state.ledgerDate || new Date(r.created).toLocaleDateString('en-CA') === state.ledgerDate),
-        )
-        .map(
-          (r) =>
-            `<a class="ledger-row" href="#task/${esc(r.task_id)}"><div><b>${esc(requester() ? r.userName : r.orgName)}</b><p>${esc(r.note)}</p><small>${dateTime(r.created)}</small></div><strong class="${r.minutes > 0 ? 'credit' : ''}">${r.minutes > 0 ? '+' : ''}${r.minutes}<small> 分钟</small></strong></a>`,
-        )
-        .join('') || empty('暂无时间流水', '经核实的实际服务将生成时间记录。')
-    }<p class="notice">占用与释放记录保留在对应兑换预约及其变更记录中。兑换不会减少历史志愿贡献。</p>`;
-  return shell(
-    `<section class="bank-hero">${icon('clock')}${hero}</section>${!requester() ? `<details class="card accounts"><summary>查看各机构账户与累计贡献</summary>${bank.accounts.map((a) => `<article class="account"><b>${esc(a.orgName)}</b><div class="account-numbers"><span>可用 ${a.available} 分钟</span><span>占用 ${a.held} 分钟</span><span>待确认 ${a.pending} 分钟</span><span>累计贡献 ${a.contributed} 分钟</span><span>已使用 ${a.used} 分钟</span><span>异议冻结 ${a.disputed || 0} 分钟</span></div>${a.debt ? `<p class="notice">更正后待补足 ${a.debt} 分钟，暂不可新增兑换。</p>` : ''}</article>`).join('') || '<p>参与服务后，查看对应机构的时间权益。</p>'}</details>` : ''}${tabs(options, btab, 'bank-tab')}<section class="surface">${content}</section>`,
-    'bank',
-    '时间银行',
-  );
+  state.requesterBankTasks = tasks;
+  const tab = ['ledger', 'offers', 'bookings'].includes(state.bankTab) ? state.bankTab : 'ledger';
+  return shell(requesterBank({ user: state.user, bank, tasks, tab, filter: state.requesterBankFilter, bookingStatus: state.bookingStatus, bookingWorkOnly: state.requesterBookingWorkOnly }), 'bank', '', false, 'requester-bank');
 }
 async function bookingPage(id) {
   const b = await api('/bookings/' + id);
@@ -622,12 +574,8 @@ async function profilePage() {
     const [map, bank] = await Promise.all([api('/map?scope=mine'), api('/bank')]);
     return shell(volunteerProfile(state.user, map.summary, bank), 'profile', '', false, 'volunteer-profile');
   }
-  const map = await api('/map?scope=mine');
-  return shell(
-    `<section class="profile-hero"><div class="avatar">${icon(requester() ? 'grid' : 'user')}</div><div><p class="eyebrow">${requester() ? '需求方 · 让善意在这里相遇' : '志愿者 · 让时间成为礼物'}</p><h1>${esc(state.user.name)}</h1><p>${esc(state.user.region)}</p></div>${btn('编辑', 'edit-profile', '', 'text-button')}</section><section class="card">${summary(map.summary)}</section><section class="card menu-list">${btn(`${icon('map')} ${requester() ? '本机构成果' : '我的爱心足迹'} ${icon('arrow')}`, 'footprints', '', 'menu-item')}${btn(`${icon('grid')} ${requester() ? '服务管理与历史记录' : '我参与的服务'} ${icon('arrow')}`, 'history', '', 'menu-item')}${btn(`${icon('clock')} 兑换记录 ${icon('arrow')}`, 'my-bookings', '', 'menu-item')}${btn(`${icon('message')} 消息通知 ${icon('arrow')}`, 'notices', '', 'menu-item')}${btn(`${icon('user')} 账户与显示设置 ${icon('arrow')}`, 'settings', '', 'menu-item')}${btn('使用说明与隐私约定', 'terms', '', 'menu-item')}${btn('意见反馈', 'feedback', '', 'menu-item')}</section>${btn('退出登录', 'logout', '', 'secondary wide')}<p class="privacy-note">时光有路 · 帮助一个人，点亮一个地方</p>`,
-    'profile',
-    '我的',
-  );
+  const [map, bank] = await Promise.all([api('/map?scope=mine'), api('/bank')]);
+  return shell(requesterProfile(state.user, map.summary, bank), 'profile', '', false, 'requester-profile');
 }
 
 async function render() {
@@ -660,6 +608,8 @@ async function render() {
     baiduMap.suspend();
     mapSheet.unmount();
     root.innerHTML = html;
+    const publication = root.querySelector('#publish-form');
+    if (publication) { syncPublication(publication); void mountPlacePreview(publication, state.config.map); }
     mapSheet.mount(state);
     if (document.querySelector('#baidu-map-slot'))
       void baiduMap
@@ -690,6 +640,75 @@ async function render() {
 }
 
 async function onAction(action, id, button) {
+  if (action === 'pub-more') {
+    const form = root.querySelector('#publish-form');
+    form.querySelector('.pub-more').open = true;
+    form.elements.namedItem(id)?.focus();
+    return;
+  }
+  if (action === 'pub-duration') {
+    const form=root.querySelector('#publish-form');
+    if (!form.elements.start.value) { form.elements.start.focus(); return; }
+    form.elements.end.value=localTime(Date.parse(form.elements.start.value)+Number(id)*60000);
+    syncPublication(form, 'end'); dirty=true; return;
+  }
+  if (action === 'pub-place' || action === 'pub-org-address') {
+    const form=root.querySelector('#publish-form');
+    const currentPlace=form.elements.place.value ? JSON.parse(form.elements.place.value) : null;
+    return choosePlace({ config:state.config.map, place:currentPlace, region:form.elements.region.value,
+      query:action === 'pub-org-address' ? state.user.address : '', onChoose:place=>{
+        if (!form.isConnected) return;
+        form.elements.place.value=JSON.stringify(place);
+        form.elements.lat.value=''; form.elements.lng.value='';
+        form.elements.address.value=place.address;
+        form.elements.region.value=[place.city,place.district].filter(Boolean).join(' · ') || form.elements.region.value;
+        form.querySelector('#pub-place-name').textContent=place.name;
+        form.querySelector('#pub-place-address').textContent=place.address;
+        dirty=true; void mountPlacePreview(form,state.config.map);
+      }});
+  }
+  if (action === 'requester-org-info')
+    return modal('机构资料', `<h3>${esc(state.user.name)}</h3><p>${esc(state.user.region)}</p><dl><dt>机构联系人</dt><dd>${esc(state.user.contact || '待完善')}</dd><dt>联系电话</dt><dd>${esc(state.user.contactPhone || state.user.phone)}</dd><dt>机构地址</dt><dd>${esc(state.user.address || '待完善')}</dd></dl>${btn('编辑资料', 'edit-profile', '', 'primary wide')}`);
+  if (action === 'requester-bank-metric') {
+    state.bankTab = id === 'bookings' ? 'bookings' : 'ledger';
+    state.requesterBankFilter = id === 'pending' ? { mode: 'pending' } : {};
+    state.requesterBookingWorkOnly = id === 'bookings';
+    state.bookingStatus = '';
+    if (current() !== 'bank') return go('bank');
+    await render();
+    root.querySelector('.rb-content')?.scrollIntoView({ block: 'start' });
+    return;
+  }
+  if (action === 'requester-completed') {
+    state.tab = 'discover';
+    state.requesterStatus = 'completed';
+    state.filter = {};
+    return go('services');
+  }
+  if (action === 'requester-bank-reset') {
+    state.requesterBankFilter = {};
+    return render();
+  }
+  if (action === 'requester-booking-work') {
+    state.requesterBookingWorkOnly = !state.requesterBookingWorkOnly;
+    return render();
+  }
+  if (action === 'requester-bank-filter') {
+    const f = state.requesterBankFilter;
+    const options = {
+      date: ['筛选日期', field('date', '记录日期（留空不限）', f.date || '', 'date', false)],
+      task: ['筛选任务', select('task', '帮扶任务', [['', '全部任务'], ...state.requesterBankTasks.filter((t) => t.kind === 'help').map((t) => [t.id, t.title || '未命名草稿'])], f.task)],
+      'booking-status': ['筛选预约状态', select('bookingStatus', '预约状态', [['', '全部状态'], ...['pending', 'accepted', 'reschedule', 'result_pending', 'disputed', 'completed', 'cancelled', 'rejected'].map((value) => [value, labels[value]])], state.bookingStatus)],
+    };
+    const option = options[id];
+    if (!option) return;
+    return modal(option[0], option[1] + btn('取消', 'close', '', 'text-button'), async (b) => {
+      if (id === 'booking-status') state.bookingStatus = b.bookingStatus;
+      else state.requesterBankFilter = { ...f, ...b };
+      dialog.close();
+      await render();
+    }, '应用筛选');
+  }
   if (action === 'profile-history') {
     state.tab = 'mine';
     state.filter = { status: 'completed' };
@@ -974,6 +993,7 @@ async function onAction(action, id, button) {
   if (action === 'bank-tab') {
     state.bankTab = id;
     if (requester()) state.filter = {};
+    if (requester() && id === 'ledger') delete state.requesterBankFilter.mode;
     return render();
   }
   if (action === 'reset-filter') {
@@ -1003,6 +1023,7 @@ async function onAction(action, id, button) {
     state.bankTab = 'bookings';
     state.bookingStatus = '';
     state.bankFilter = {};
+    state.requesterBookingWorkOnly = false;
     go('bank');
     return;
   }
@@ -1380,7 +1401,7 @@ async function onAction(action, id, button) {
   }
   if (action === 'read-all') {
     await api('/notices/read', 'PUT', {});
-    if (current() === 'services' && requester()) await render();
+    if (['services', 'bank'].includes(current()) && requester()) await render();
     return onAction('notices');
   }
   if (action === 'audit') {
@@ -1432,13 +1453,7 @@ async function onAction(action, id, button) {
       '上传材料',
     );
   }
-  if (action === 'preview-task') {
-    const b = formData(document.querySelector('#publish-form'));
-    return modal(
-      '公开预览',
-      `<h3>${esc(b.title || '未命名草稿')}</h3><p>${esc(state.user.name)} · ${esc(b.region)}</p><p>${dateTime(b.start)} — ${dateTime(b.end)}</p><p class="pre">${esc(b.description)}</p><p>${esc(b.minutes)} 分钟 · ${esc(b.capacity)} 名额</p><p class="notice">详细门牌、受助者信息和联系人电话仅向确认参与者展示。</p>`,
-    );
-  }
+  if (action === 'preview-task') return previewPublication();
   if (action === 'apply')
     return modal(
       '报名参与',
@@ -1688,16 +1703,8 @@ document.addEventListener('submit', async (event) => {
       await openBankLedger();
     }
     if (form.id === 'publish-form') {
-      const old = state.editTask;
-      const result = await api('/tasks' + (old ? '/' + old.id : ''), old ? 'PUT' : 'POST', {
-        ...b,
-        kind: old?.kind || current().split('/')[1] || 'help',
-        status: old && old.status !== 'draft' ? old.status : submit.value,
-        revision: old?.revision,
-      });
-      dirty = false;
-      go('task/' + result.id);
-      toast(result.hasPendingChange ? '已通知参与者确认安排变更' : '服务内容已保存');
+      if (submit?.value === 'draft') await savePublication('draft');
+      else previewPublication();
     }
   } catch (error) {
     errorIn(form, error);
@@ -1707,9 +1714,12 @@ document.addEventListener('submit', async (event) => {
   }
 });
 document.addEventListener('input', (e) => {
-  if (e.target.closest('#publish-form')) dirty = true;
+  const form=e.target.closest('#publish-form');
+  if (form) { dirty=true; syncPublication(form,e.target.name); if(e.target.name==='address') form.querySelector('.pub-mini-map')?.remove(); }
 });
 document.addEventListener('change', async (e) => {
+  const form=e.target.closest('#publish-form');
+  if (form) { dirty=true; syncPublication(form,e.target.name); }
   if (e.target.id === 'show-needs') {
     state.showNeeds = e.target.checked;
     await render();

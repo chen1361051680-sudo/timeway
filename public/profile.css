@@ -537,6 +537,47 @@ dialog.account-dialog {
   background: linear-gradient(150deg, #fff3e7 0, #f4f8fc 220px);
   color: #344754;
 }
+dialog.account-dialog.profile-editor-dialog,
+dialog.account-dialog.account-settings-dialog {
+  height: fit-content;
+  max-height: calc(100dvh - 28px);
+}
+dialog.profile-editor-dialog .modal-head,
+dialog.account-settings-dialog .modal-head {
+  padding: 12px 18px 8px;
+}
+dialog.profile-editor-dialog .account-body,
+dialog.account-settings-dialog .account-body {
+  padding: 0 14px 12px;
+}
+dialog.profile-editor-dialog .profile-editor-fields {
+  padding: 16px;
+  margin: 0;
+}
+dialog.account-settings-dialog .account-settings-card {
+  padding: 0 16px;
+  margin: 0 0 12px;
+}
+dialog.account-settings-dialog .account-settings-card > * {
+  min-height: 64px;
+  padding: 12px 0;
+}
+dialog.account-settings-dialog .account-settings-card > * + * {
+  border-top: 1px solid #edf2f6;
+}
+dialog.profile-editor-dialog .field {
+  gap: 6px;
+  margin-bottom: 12px;
+}
+dialog.profile-editor-dialog .field input,
+dialog.profile-editor-dialog .field textarea {
+  padding: 10px 12px;
+  min-height: 44px;
+}
+dialog.profile-editor-dialog .field textarea {
+  min-height: 66px;
+  height: 66px;
+}
 dialog.account-dialog[open] {
   display: flex;
   flex-direction: column;
@@ -684,22 +725,6 @@ dialog.account-dialog[open] {
   outline-offset: 1px;
   border-color: #efb694;
   background: #fffdfa;
-}
-.account-footnote {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 0 8px;
-  margin: 18px 0 0;
-  color: #8c9ba6;
-  font-size: 12px;
-  line-height: 1.9;
-}
-.account-footnote .icon {
-  width: 16px;
-  height: 16px;
-  margin-top: 3px;
-  flex-shrink: 0;
 }
 .account-footer {
   flex-shrink: 0;

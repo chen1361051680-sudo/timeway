@@ -1,89 +1,76 @@
 import { esc, icon, btn, hours, field } from './ui.js';
 
-const accountSection = (symbol, title, description, content) =>
-  `<section class="account-section"><div class="account-section-title">${icon(symbol)}<div><h3>${title}</h3><p>${description}</p></div></div>${content}</section>`;
-
 export function profileEditor(user) {
   const requester = user.role === 'requester';
-  return `<div class="account-intro"><span class="account-intro-icon">${icon(requester ? 'building' : 'user')}</span><div><h3>${requester ? '让志愿者认识你的机构' : '让社区更了解你'}</h3><p>完善联系信息，让每一次帮助顺利相遇</p></div></div>
-    ${accountSection(
-      'user',
-      '基本资料',
-      '用于服务联系与身份展示',
-      field(
-        'name',
-        requester ? '机构名称' : '姓名',
-        user.name,
-        'text',
-        true,
-        'maxlength="80" autocomplete="name"',
-      ) +
-        (requester ? field('contact', '机构联系人', user.contact, 'text', true, 'maxlength="80"') : '') +
-        field(
-          'contactPhone',
-          '联系电话',
-          user.contactPhone || user.phone,
-          'tel',
+  return (
+    '<section class="account-section profile-editor-fields">' +
+    field(
+      'name',
+      requester ? '机构名称' : '姓名',
+      user.name,
+      'text',
+      true,
+      'maxlength="80" autocomplete="name"',
+    ) +
+    (requester ? field('contact', '机构联系人', user.contact, 'text', true, 'maxlength="80"') : '') +
+    field(
+      'contactPhone',
+      '联系电话',
+      user.contactPhone || user.phone,
+      'tel',
+      true,
+      'maxlength="30" autocomplete="tel"',
+    ) +
+    field(
+      'region',
+      '常用服务区域',
+      user.region,
+      'text',
+      true,
+      'maxlength="100" placeholder="例如：杭州市西湖区"',
+    ) +
+    (requester
+      ? field(
+          'address',
+          '机构地址',
+          user.address,
+          'text',
           true,
-          'maxlength="30" autocomplete="tel"',
-        ),
-    )}
-    ${accountSection(
-      'map',
-      requester ? '机构服务信息' : '服务意愿',
-      '帮助双方找到合适的服务安排',
-      field(
-        'region',
-        '常用服务区域',
-        user.region,
-        'text',
-        true,
-        'maxlength="100" placeholder="例如：杭州市西湖区"',
-      ) +
-        (requester
-          ? field(
-              'address',
-              '机构地址',
-              user.address,
-              'text',
-              true,
-              'maxlength="200" autocomplete="street-address"',
-            )
-          : field(
-              'skills',
-              '擅长服务',
-              user.skills,
-              'textarea',
-              false,
-              'maxlength="200" placeholder="例如：陪伴交流、数字助老、陪诊协助"',
-            )),
-    )}
-    <p class="account-footnote">${icon('info')}<span>账号手机号：${esc(user.phone)}<br>当前身份：${requester ? '需求方' : '志愿者'}</span></p>`;
+          'maxlength="200" autocomplete="street-address"',
+        )
+      : field(
+          'skills',
+          '擅长服务',
+          user.skills,
+          'textarea',
+          false,
+          'maxlength="200" rows="2" placeholder="例如：陪伴交流、数字助老、陪诊协助"',
+        )) +
+    '</section>'
+  );
 }
 
 export function accountSettings(user) {
-  const requester = user.role === 'requester';
   const large = user.settings?.fontSize === 'large';
-  const row = (symbol, title, sub, action) =>
+  return (
+    '<section class="account-section account-settings-card">' +
+    '<label class="account-setting-row"><span class="account-row-copy"><strong>文字大小</strong></span><select name="fontSize" aria-label="文字大小"><option value="normal" ' +
+    (!large ? 'selected' : '') +
+    '>标准</option><option value="large" ' +
+    (large ? 'selected' : '') +
+    '>大字</option></select></label>' +
+    '<label class="account-setting-row"><span class="account-row-copy"><strong>服务提醒</strong></span><span class="account-toggle"><input type="checkbox" role="switch" aria-label="开启服务提醒" name="notifications" ' +
+    (user.settings?.notifications !== false ? 'checked' : '') +
+    '><span aria-hidden="true"></span></span></label>' +
     btn(
-      `<span class="account-row-icon">${icon(symbol)}</span><span class="account-row-copy"><strong>${title}</strong><small>${sub}</small></span>${icon('arrow')}`,
-      action,
+      '<span class="account-row-copy"><strong>使用说明与隐私约定</strong></span>' + icon('arrow'),
+      'terms',
       '',
       'account-link-row',
-    );
-  return `<div class="account-intro"><span class="account-intro-icon">${icon(requester ? 'building' : 'user')}</span><div><h3>${esc(user.name)}</h3><p>${requester ? '需求方' : '志愿者'} · ${esc(user.phone)}</p></div></div>
-    <section class="account-section"><h3 class="account-group-label">显示与提醒</h3>
-      <label class="account-setting-row"><span class="account-row-copy"><strong>文字大小</strong><small>选择适合自己的阅读大小</small></span><select name="fontSize" aria-label="文字大小"><option value="normal" ${!large ? 'selected' : ''}>标准</option><option value="large" ${large ? 'selected' : ''}>大字</option></select></label>
-      <div class="account-font-preview"><span>阅读预览</span><p>让每一份善意，都被温柔看见</p></div>
-      <label class="account-setting-row"><span class="account-row-copy"><strong>服务提醒</strong><small>接收服务安排与时间账户提醒</small></span><span class="account-toggle"><input type="checkbox" role="switch" aria-label="开启服务提醒" name="notifications" ${user.settings?.notifications !== false ? 'checked' : ''}><span aria-hidden="true"></span></span></label>
-      <p class="account-inline-note">报名结果、时长入账等业务消息仍可在“我的消息”查看。</p>
-    </section>
-    <section class="account-section account-link-group"><h3 class="account-group-label">资料与隐私</h3>
-      ${row('user', '编辑资料', '更新联系信息与服务意愿', 'edit-profile')}
-      ${row('info', '使用说明与隐私约定', '了解服务规则与信息使用方式', 'terms')}
-      <details class="account-location-note"><summary><span class="account-row-icon">${icon('locate')}</span><span class="account-row-copy"><strong>定位说明</strong><small>用于查找附近的爱心需求</small></span>${icon('chevron')}</summary><p>进入爱心地图时会申请定位权限。你可以拒绝授权，并手动选择地区；公共地图仅展示概略服务位置。定位权限可在浏览器的网站设置中管理。</p></details>
-    </section>
-    ${btn('退出登录', 'logout', '', 'account-logout')}`;
+    ) +
+    '</section>' +
+    btn('退出登录', 'logout', '', 'account-logout')
+  );
 }
 
 // Match the existing filled navigation icons with soft, two-tone card illustrations.
