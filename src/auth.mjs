@@ -20,12 +20,14 @@ const demoAccounts = {
   },
 };
 export class Auth {
-  constructor(store, environment) {
+  constructor(store, environment, demoMode = false) {
     this.s = store;
     this.environment = environment;
+    this.demoMode = demoMode;
+    if (demoMode) check(store.db.prepare('SELECT value FROM metadata WHERE key=?').get('environment')?.value === 'demo', '模拟登录不能连接生产数据库');
   }
   demoConfig() {
-    if (!['development', 'test'].includes(this.environment)) return null;
+    if (!['development', 'test'].includes(this.environment) && !this.demoMode) return null;
     return Object.fromEntries(
       Object.entries(demoAccounts).map(([role, { account, password }]) => [role, { account, password }]),
     );

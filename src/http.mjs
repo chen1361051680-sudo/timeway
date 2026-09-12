@@ -12,11 +12,15 @@ export function services(options = {}) {
     ['development', 'test', 'production'].includes(environment),
     'NODE_ENV 必须为 development、test 或 production',
   );
+  const demoMode = environment === 'production' && (options.demoMode ?? process.env.DEMO_MODE === 'true');
+  const productionPath = options.databasePath || process.env.DATABASE_PATH || `./data/${environment}.sqlite`;
+  const databasePath = demoMode ? options.demoDatabasePath || process.env.DEMO_DATABASE_PATH || './data/demo.sqlite' : productionPath;
+  check(!demoMode || resolve(databasePath) !== resolve(productionPath), '手机测试必须使用独立数据库');
   const store =
     options.store ||
     new Store(
-      options.databasePath || process.env.DATABASE_PATH || `./data/${environment}.sqlite`,
-      environment,
+      databasePath,
+      demoMode ? 'demo' : environment,
     );
   const adapters = externalAdapters({
     environment,
@@ -29,9 +33,10 @@ export function services(options = {}) {
   return {
     store,
     domain: new Domain(store, adapters),
-    auth: new Auth(store, environment),
+    auth: new Auth(store, environment, demoMode),
     adapters,
     environment,
+    demoMode,
     origin: options.origin || process.env.PUBLIC_ORIGIN,
     uploads: resolve(`./data/${environment}-uploads`),
   };
@@ -69,7 +74,7 @@ export async function api(request, response, url, ctx) {
     check(String(request.headers['content-type']).startsWith('application/json'), '请使用 JSON 请求', 415);
   }
   if (path === '/api/config' && method === 'GET')
-    return send({ environment, adapters: adapters.status, map: adapters.browserMap, demoAccounts: auth.demoConfig() });
+    return send({ environment, demoMode: ctx.demoMode, adapters: adapters.status, map: adapters.browserMap, demoAccounts: auth.demoConfig() });
   const session = auth.session(request),
     user = session?.user;
   if (path === '/api/me' && method === 'GET')
