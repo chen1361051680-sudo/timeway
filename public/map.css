@@ -641,6 +641,41 @@
   min-width: 0;
   align-self: center;
 }
+.map-task-details {
+  grid-column: 1 / -1;
+  padding-top: 2cqw;
+  border-top: 1px solid #edf2f7;
+  font-size: max(12px, 2.2cqw);
+  color: #63758a;
+}
+.map-task-location {
+  display: flex;
+  align-items: center;
+  gap: 1cqw;
+}
+.map-task-location > span:first-of-type {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.map-task-location .icon {
+  flex-shrink: 0;
+  width: 3cqw;
+  height: 3cqw;
+}
+.map-task-vacancy {
+  margin-left: auto;
+  flex-shrink: 0;
+  color: #ec7156;
+}
+.map-task-details p {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+  margin: 1.5cqw 0 0;
+  line-height: 1.7;
+  white-space: pre-line;
+}
 .map-task-heading h3 {
   font-size: 2.85cqw;
   margin: 0 0 0.5cqw;

@@ -1,4 +1,5 @@
 import { esc, icon, btn, link, hours, dateTime } from './ui.js';
+import { serviceImage } from './service-image.js';
 
 // Positions are a schematic layout on an illustration, never geographic coordinates.
 const needIcons = {
@@ -30,7 +31,7 @@ function appointment(value) {
   return dateTime(value);
 }
 
-function needCard(t, isRequester) {
+function needCard(t, isRequester, selected = false) {
   if (!t && isRequester)
     return `<div class="map-todo-empty"><span class="map-todo-empty-icon" aria-hidden="true">${icon('clipboard')}${icon('check')}</span><h3>暂无待处理事项</h3><p>新的报名和服务确认会显示在这里</p>${btn(icon('plus') + '发布新需求', 'map-publish', '', 'map-todo-empty-publish')}</div>`;
   if (!t)
@@ -49,10 +50,11 @@ function needCard(t, isRequester) {
             ? '查看详情并报名'
             : '查看服务详情';
   return `<article class="map-task-card" data-task-id="${esc(t.id)}">
-    <img class="map-task-image" src="/map-service.webp" width="128" height="128" alt="志愿者陪伴长者的主题插画">
+    <img class="map-task-image" src="${serviceImage(t)}" width="128" height="128" alt="${esc(t.category)}服务图片">
     <div class="map-task-heading"><h3>${esc(t.title)}</h3><p>${icon('building')}<span>${esc(t.orgName)}</span></p></div>
     ${link(`${label}${icon('arrow')}`, 'task/' + t.id, 'map-task-cta')}
     <div class="map-task-meta"><span>${icon('calendar')}${esc(appointment(t.start))}</span><span>${icon('clock')}${hours(t.minutes)}小时</span></div>
+    ${selected ? `<div class="map-task-details"><div class="map-task-location">${icon('pin')}<span>${esc(t.region)}</span>${t.remaining > 0 ? `<span class="map-task-vacancy">还需 ${t.remaining} 人</span>` : ''}</div>${t.description ? `<p>${esc(t.description)}</p>` : ''}</div>` : ''}
   </article>`;
 }
 
@@ -131,10 +133,10 @@ export function mapContent({ state, data, needs, cells, action, pending }) {
       </div>
       <div class="map-sheet-scroll" ${state.collapsed ? 'hidden' : ''}>
       <div id="map-action" ${state.collapsed ? 'hidden' : ''}>
-        <div class="map-action-title"><h2>${icon('heart')}${selectedCell ? '这里的爱心记忆' : isRequester ? '需要你处理的事项' : action?.application ? '我的服务安排' : '附近的爱心需求'}</h2>${selectedCell || state.selectedTask ? '' : btn('查看更多 ' + icon('arrow'), 'map-more', '', 'map-more')}</div>
-        ${selectedCell ? regionCard(selectedCell, selectedIndex, mine) : needCard(action, isRequester)}
+        <div class="map-action-title"><h2>${icon('heart')}${selectedCell ? '这里的爱心记忆' : state.selectedTask ? '当前选择的需求' : isRequester ? '需要你处理的事项' : action?.application ? '我的服务安排' : '附近的爱心需求'}</h2>${selectedCell || state.selectedTask ? '' : btn('查看更多 ' + icon('arrow'), 'map-more', '', 'map-more')}</div>
+        ${selectedCell ? regionCard(selectedCell, selectedIndex, mine) : needCard(action, isRequester, !!state.selectedTask)}
         ${
-          !isRequester && !selectedCell
+          !isRequester && !selectedCell && !state.selectedTask
             ? '<div class="map-additional-needs">' +
               needs
                 .filter((t) => t.id !== action?.id)

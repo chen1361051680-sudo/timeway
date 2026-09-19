@@ -1,4 +1,5 @@
 import { esc, icon, btn, empty, hours, status } from './ui.js';
+import { serviceImage } from './service-image.js';
 
 export const hallCategories = [
   ['陪伴交流', '陪伴聊天'],
@@ -22,7 +23,7 @@ const groups = [
   ['other', '其他'],
 ];
 export function hallCard(t) {
-  const [art, color] = artwork[t.category] || ['companion', 'blue'];
+  const [, color] = artwork[t.category] || ['companion', 'blue'];
   const category = hallCategories.find(([value]) => value === t.category)?.[1] || t.category;
   const date = new Date(t.start);
   const parts = date.toLocaleDateString('en-CA', { timeZone: 'Asia/Shanghai' }).split('-');
@@ -43,7 +44,7 @@ export function hallCard(t) {
         confirmed: '查看成果',
       }[t.application?.status] || '查看详情';
   return `<a class="hall-card" href="#task/${esc(t.id)}">
-    <div class="hall-picture"><img src="/images/hall-${art}.webp" alt="" width="1024" height="1024" loading="lazy"><span class="hall-category ${color}">${esc(category)}</span></div>
+    <div class="hall-picture"><img src="${serviceImage(t)}" alt="" width="1024" height="1024" loading="lazy"><span class="hall-category ${color}">${esc(category)}</span></div>
     <div class="hall-card-content">
       <div class="hall-card-heading"><h3>${esc(t.title)}</h3></div>
       <p class="hall-org" title="${esc(t.orgName)} · ${esc(t.region)}">${icon('home')}<span>${esc(t.orgName)}</span></p>
