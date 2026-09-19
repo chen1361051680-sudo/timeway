@@ -49,7 +49,7 @@ test('百度选址保存原始点供编辑，归一化后沿用已有网格；�
   for (const key of ['place', 'lat', 'lng', 'address', 'recipient', 'phone'])
     assert.equal(publicTask[key], undefined);
   const preview = publicationPreview(input, org, null);
-  assert.ok(!preview.includes('私人位置301'));
+  assert.ok(preview.includes('私人位置301'));
   assert.ok(!preview.includes(org.contactPhone));
   const app = d.apply(vol, task.id, {});
   d.applicationAction(org, app.id, { action: 'accept' });
@@ -63,7 +63,7 @@ test('百度选址保存原始点供编辑，归一化后沿用已有网格；�
   assert.equal(edited.pending.proposed.place.lng, lng + 0.01);
 });
 
-test('选址数据拒绝未知坐标类型与无效点；过期草稿不能直接发布', (t) => {
+test('选址数据拒绝未知坐标类型与无效点；禁止草稿与过期需求发布', (t) => {
   for (const value of [
     [],
     {},
@@ -86,17 +86,11 @@ test('选址数据拒绝未知坐标类型与无效点；过期草稿不能直�
   });
   assert.equal(core.recipient, '');
   assert.equal(core.status, 'published');
-  const draft = d.createTask(org, {
-    ...newPublication('help', org),
-    title: '过期草稿',
-    description: '测试',
-    recipient: '测试',
-    address: '测试地点',
-    start,
-    end: new Date(Date.parse(start) + 3600000).toISOString(),
-    deadline: start,
-    status: 'draft',
-  });
-  assert.throws(() => d.saveTask(org, draft.id, { ...draft, status: 'published' }), /晚于当前时间/);
-  assert.equal(server.context.store.get('task', draft.id).status, 'draft');
+  assert.throws(() => d.createTask(org, { ...core, status: 'draft' }));
+  assert.throws(() => d.saveTask(org, core.id, { ...core, status: 'draft' }));
+  assert.throws(() => d.taskAction(org, core.id, { action: 'copy' }));
+  assert.throws(() => d.createTask(org, { ...core, start,
+    end: new Date(Date.parse(start) + 3600000).toISOString(), deadline: start,
+  }), /晚于当前时间/);
+  assert.equal(server.context.store.all('task').length, 1);
 });

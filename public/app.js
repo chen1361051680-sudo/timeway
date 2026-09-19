@@ -19,15 +19,17 @@ import {
   select,
   categories,
   taskCard,
-  bookingCard,
 } from './ui.js';
 import { hallContent, hallCategories } from './hall.js';
 import { requesterHall } from './requester-hall.js';
+import { helpDetail, helpManagement, helpTaskTools, serviceCompletionDialog } from './task-detail.js';
 import { requesterBank, requesterProfile } from './requester-account.js';
 import { volunteerProfile, profileEditor, accountSettings } from './profile.js';
 import { bankContent, bankAccount, bankLedger } from './bank.js';
 import { newPublication, publishForm, syncPublication, publicationData, validatePublication, publicationPreview } from './publish.js';
 import { choosePlace, mountPlacePreview } from './place-picker.js';
+import { openTaskRoute } from './task-route.js';
+import { redeemDetail, instantRedemptionDetail, isGoods, isUnscheduledGoods, uploadRedeemCover, removeRedeemCover } from './redeem.js';
 
 const root = document.querySelector('#app'),
   dialog = document.querySelector('#dialog');
@@ -43,8 +45,8 @@ const state = {
   filter: {},
   requesterStatus: '',
   requesterTodoFilter: '',
+  latestPublishedTaskId: '',
   requesterBankFilter: {},
-  requesterBookingWorkOnly: false,
   mapScope: 'all',
   city: null,
   mapRegion: null,
@@ -71,7 +73,7 @@ function toast(message) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => node.classList.remove('visible'), 4500);
 }
-async function api(path, method = 'GET', body, idempotencyKey) {
+async function api(path, method = 'GET', body, idempotencyKey, signal) {
   if (body) {
     body = { ...body };
     for (const key of ['start', 'end', 'deadline'])
@@ -83,6 +85,7 @@ async function api(path, method = 'GET', body, idempotencyKey) {
   }
   const response = await fetch('/api' + path, {
     method,
+    ...(signal ? { signal } : {}),
     headers: {
       ...(body ? { 'Content-Type': 'application/json' } : {}),
       ...(state.csrf ? { 'X-CSRF-Token': state.csrf } : {}),
@@ -122,7 +125,7 @@ function shell(content, tab = 'map', title = '', back = false, variant = '') {
 }
 function modal(title, html, onSubmit, label = '确认', accountStyle = false) {
   if (!mayDiscardProfileForm()) return;
-  dialog.classList.remove('login-dialog');
+  dialog.classList.remove('login-dialog', 'service-completion-dialog');
   dialog.classList.toggle('account-dialog', accountStyle);
   dialog.classList.toggle('profile-editor-dialog', accountStyle && title === '编辑资料');
   dialog.classList.toggle('account-settings-dialog', accountStyle && title === '设置');
@@ -201,7 +204,7 @@ function loginForm(role) {
   dialog.classList.add('login-dialog');
 }
 function termsContent() {
-  return `<p>时光有路连接社区助老需求与志愿者。当前仅有需求方和志愿者两个身份。</p><p>当前使用模拟账号登录。个人资料、联系信息和服务材料仅供相关参与者处理本次服务。公共成果只展示概略区域与匿名统计。</p><p>时间权益来自机构核实的实际服务，不是现金，按发放机构分别兑换。未提供的兑换服务取消后释放占用，争议由双方通过关联记录沟通并核实。</p><p>请取得受助者同意，避免上传不必要的身份、医疗或其他敏感材料。可通过任务留言申请资料更正，个人资料可在“我的”维护。</p><p>地图、短信、文件存储的真实接入以当前环境说明为准。</p>`;
+  return `<p>时光有路连接社区助老需求与志愿者。当前仅有需求方和志愿者两个身份。</p><p>当前使用模拟账号登录。个人资料与联系信息仅供相关参与者处理本次服务。公共成果只展示概略区域与匿名统计。</p><p>时间权益来自机构核实的实际服务，不是现金，按发放机构分别兑换。未提供的兑换服务取消后释放占用，争议由双方通过关联记录沟通并核实。</p><p>请取得受助者同意，避免填写不必要的身份、医疗等敏感信息。如需更正服务记录，请联系发布机构；个人资料可在“我的”维护。</p><p>地图、短信的真实接入以当前环境说明为准。</p>`;
 }
 function profileFields() {
   const u = state.user;
@@ -296,15 +299,22 @@ function filters(extra = '') {
 async function servicesPage() {
   if (!requester()) {
     const mine = state.tab === 'mine';
+    state.filter = Object.fromEntries(Object.entries(state.filter).filter(([key]) =>
+      ['q', 'category', 'date', 'minutes', 'budget', 'org', 'status'].includes(key),
+    ));
     const query = new URLSearchParams({
       kind: 'help',
-      sort: 'distance',
+      sort: 'start',
       ...state.filter,
       ...(mine ? { scope: 'mine' } : { available: '1' }),
     });
-    const [listed, own] = await Promise.all([api('/tasks?' + query), api('/tasks?kind=help&scope=mine')]);
+    const [listed, history] = await Promise.all([api('/tasks?' + query), api('/tasks?kind=help&scope=mine')]);
+    const own = history.filter((t) => t.application?.status !== 'withdrawn');
     state.ownServices = own;
-    const tasks = state.filter.status ? listed.filter((t) => matchesStatus(t, state.filter.status)) : listed;
+    const tasks = listed.filter((t) =>
+      (!mine || t.application?.status !== 'withdrawn') &&
+      (!state.filter.status || matchesStatus(t, state.filter.status)),
+    );
     state.list = tasks;
     return shell(
       hallContent({
@@ -328,6 +338,7 @@ async function servicesPage() {
       todo: state.tab === 'todo',
       filter: state.requesterStatus,
       todoFilter: state.requesterTodoFilter,
+      latestTaskId: state.latestPublishedTaskId,
     }),
     'services',
     '',
@@ -337,7 +348,6 @@ async function servicesPage() {
 }
 function matchesStatus(t, s) {
   const a = t.application;
-  if (s === 'draft') return t.status === 'draft';
   if (s === 'pending')
     return (
       t.hasPendingChange ||
@@ -365,34 +375,27 @@ function matchesStatus(t, s) {
 }
 function recordBlock(r, org) {
   if (!r) return '';
-  return `<div class="record-block requester-task-focus" data-record-id="${esc(r.id)}" tabindex="-1"><div class="between"><h3>服务核实记录</h3>${status(r.status)}</div><p>${dateTime(r.start)} — ${dateTime(r.end)}</p><p class="pre">${esc(r.content)}</p><p>提交 ${r.submitted} 分钟 · 已确认 ${r.confirmed} 分钟 · ${r.recipients || 0} 受助人次</p>${r.note ? `<p>人工说明：${esc(r.note)}</p>` : ''}${r.reason ? `<p>核实说明：${esc(r.reason)}</p>` : ''}${r.dispute ? `<p class="notice">异议：${esc(r.dispute)}</p>` : ''}<div class="actions">${org ? (r.status === 'submitted' ? btn('核实服务', 'confirm-record', r.id, 'primary') : r.status === 'disputed' ? btn('处理异议', 'resolve-record', r.id, 'primary') : btn('更正记录', 'correct-record', r.id)) + (['confirmed', 'disputed'].includes(r.status) ? btn('撤销无效记录', 'revoke-record', r.id, 'text-button') : '') : r.status !== 'disputed' ? btn('对结果有异议', 'dispute-record', r.id) : ''}${btn('查看变更记录', 'audit', r.id, 'text-button')}</div></div>`;
+  return `<div class="record-block requester-task-focus" data-record-id="${esc(r.id)}" tabindex="-1"><div class="between"><h3>服务核实记录</h3>${status(r.status)}</div><p>${dateTime(r.start)} — ${dateTime(r.end)}</p><p class="pre">${esc(r.content)}</p><p>提交 ${r.submitted} 分钟 · 已确认 ${r.confirmed} 分钟 · ${r.recipients || 0} 受助人次</p>${r.note ? `<p>提交说明：${esc(r.note)}</p>` : ''}${r.reason ? `<p>核实说明：${esc(r.reason)}</p>` : ''}${r.dispute ? `<p class="notice">异议：${esc(r.dispute)}</p>` : ''}<div class="actions">${org ? (r.status === 'submitted' ? btn('核实服务', 'confirm-record', r.id, 'primary') : r.status === 'disputed' ? btn('处理异议', 'resolve-record', r.id, 'primary') : btn('更正记录', 'correct-record', r.id)) + (['confirmed', 'disputed'].includes(r.status) ? btn('撤销无效记录', 'revoke-record', r.id, 'text-button') : '') : r.status !== 'disputed' ? btn('对结果有异议', 'dispute-record', r.id) : ''}${btn('查看变更记录', 'audit', r.id, 'text-button')}</div></div>`;
 }
 function changeBlock(t, a) {
   if (!t.pending) return '';
   const p = t.pending.proposed;
-  return `<section class="card notice requester-task-focus" data-task-section="changes" tabindex="-1"><h3>服务安排变更待确认</h3><p>${esc(p.title)} · ${dateTime(p.start)} — ${dateTime(p.end)}</p><p>${esc(p.address)} · ${p.minutes} 分钟</p><p class="pre">${esc(p.description)}</p>${t.mine ? `<p>${Object.values(t.pending.answers).filter((x) => x === 'pending').length} 人尚未确认；全部处理后新安排生效。</p>` : a && t.pending.answers[a.id] === 'pending' ? `<div class="actions">${btn('接受新安排', 'accept-change', a.id, 'primary')}${btn('不同意并退出', 'decline-change', a.id)}</div>` : '<p>已记录你的选择，等待其他参与者确认。</p>'}</section>`;
+  if (isUnscheduledGoods(p)) return `<section class="card notice"><h3>兑换内容变更待确认</h3><p>${esc(p.title)}</p><p>${esc(p.itemName)} · ${esc(p.specification)}</p><p>兑换所需时长：${hours(p.minutes)} 小时</p><p>${t.mine ? '已有兑换申请确认后生效。' : '请在兑换申请中确认变更。'}</p></section>`;
+  const exchange = t.kind === 'redeem' ? `<p>${isGoods(p) ? `物品兑换 · ${esc(p.specification)}` : '服务兑换'}</p>${p.fulfillment ? `<p class="pre">${esc(p.fulfillment)}</p>` : ''}` : '';
+  const responseHint = t.kind === 'redeem' ? '请在兑换安排中查看并确认变更。' : '已记录你的选择，等待其他参与者确认。';
+  return `<section class="card notice requester-task-focus" data-task-section="changes" tabindex="-1"><h3>服务安排变更待确认</h3><p>${esc(p.title)} · ${dateTime(p.start)} — ${dateTime(p.end)}</p><p>${esc(p.address)} · ${p.minutes} 分钟</p><p class="pre">${esc(p.description)}</p>${exchange}${t.mine ? `<p>${Object.values(t.pending.answers).filter((x) => x === 'pending').length} 人尚未确认；全部处理后新安排生效。</p>` : a && t.pending.answers[a.id] === 'pending' ? `<div class="actions">${btn('接受新安排', 'accept-change', a.id, 'primary')}${btn('不同意并退出', 'decline-change', a.id)}</div>` : `<p>${responseHint}</p>`}</section>`;
 }
-function requesterManagement(t) {
-  const other = t.applications.filter(
-    (a) =>
-      (a.changeRequest && a.status === 'accepted') ||
-      (a.status === 'withdrawn' && a.wasAccepted && !a.withdrawalHandled),
-  );
-  const focus = (name) =>
-    `class="participant requester-task-focus" data-task-section="${name}" tabindex="-1"`;
-  return `${other.length ? `<section class="card" data-task-section="other" tabindex="-1"><h2>其他待处理事项</h2>${other.map((a) => (a.changeRequest ? `<article ${focus('changes')}><h3>${esc(a.volunteer.name)} · 申请调整时间</h3><p>原时间：${dateTime(t.start)} — ${dateTime(t.end)}</p><p>建议时间：${dateTime(a.changeRequest.start)} — ${dateTime(a.changeRequest.end)}</p><p>${esc(a.changeRequest.reason)}</p><div class="actions">${btn('同意调整', 'accept-request-change', a.id, 'primary')}${btn('不通过', 'reject-request-change', a.id)}</div></article>` : `<article ${focus('withdrawals')}><h3>${esc(a.volunteer.name)} · 已退出任务</h3><p>${esc(a.reason)}</p><p>当前已确认 ${t.capacity - t.remaining}/${t.capacity} 人，请联系相关人员并安排补招。</p><div class="actions">${link('调整需求安排', 'publish/' + t.id)}${btn('记录处理结果', 'handle-withdrawal', a.id, 'primary')}</div></article>`)).join('')}</section>` : ''}
-  <section class="card requester-task-focus" data-task-section="management" tabindex="-1"><h2>报名与服务管理</h2>${t.applications.length ? t.applications.map((a) => `<article ${focus(a.status === 'pending' ? 'applications' : a.status === 'disputed' ? 'disputes' : 'records')}><div class="between"><h3>${esc(a.volunteer.name)}</h3>${status(a.status)}</div><p>${esc(a.volunteer.skills || '未填写擅长服务')}</p><p>${esc(a.message || '无报名留言')}</p>${a.reason ? `<p>${esc(a.reason)}</p>` : ''}${a.status === 'pending' ? `<div class="actions">${btn('确认参与', 'accept-app', a.id, 'primary')}${btn('不通过', 'reject-app', a.id)}</div>` : ''}${a.withdrawalHandled ? `<p>退出处理：${esc(a.withdrawalHandled.reason)}</p>` : ''}${a.changeResolution ? `<p>时间调整：${a.changeResolution.action === 'accept-request-change' ? '已同意' : '未通过'} ${esc(a.changeResolution.reason)}</p>` : ''}${recordBlock(a.record, true)}</article>`).join('') : empty('暂时没有人报名', '发布后可在这里确认参与人员。')}</section>`;
-}
-function focusTaskSection() {
-  const [page, , section, recordId] = current().split('/');
+function focusTaskSection(targetSection) {
+  const [page, , routeSection, recordId] = current().split('/');
+  const section = targetSection || routeSection;
   if (
     page !== 'task' ||
-    !['applications', 'arrangement', 'records', 'other', 'disputes', 'changes', 'withdrawals'].includes(
+    !['management', 'applications', 'arrangement', 'records', 'other', 'disputes', 'changes', 'withdrawals'].includes(
       section,
     )
   )
     return;
-  const exactRecord = recordId
+  const exactRecord = recordId && !targetSection
     ? [...root.querySelectorAll('[data-record-id]')].find((el) => el.dataset.recordId === recordId)
     : null;
   const element = exactRecord ||
@@ -416,7 +419,9 @@ async function taskPage(id) {
   const a = t.application;
   let action = '';
   if (t.mine) {
-    action = `${t.status !== 'cancelled' ? link('编辑内容', 'publish/' + t.id) + btn(t.status === 'published' ? '暂停招募' : '开放发布', t.status === 'published' ? 'pause-task' : 'publish-task', id) : ''}${btn('复制为草稿', 'copy-task', id)}${t.status !== 'cancelled' ? btn('取消需求', 'cancel-task', id, 'text-button') : ''}${btn('补充／更正成果地点', 'location', id, 'text-button')}`;
+    action = isGoods(t)
+      ? `${t.status !== 'cancelled' ? link('编辑内容', 'publish/' + t.id) : ''}${btn('删除', 'delete-offer', id, 'text-button')}`
+      : `${t.status !== 'cancelled' ? link('编辑内容', 'publish/' + t.id) + btn(t.status === 'published' ? '暂停招募' : '开放发布', t.status === 'published' ? 'pause-task' : 'publish-task', id) : ''}${t.status !== 'cancelled' ? btn('取消需求', 'cancel-task', id, 'text-button') : ''}${t.kind === 'help' ? btn('补充／更正成果地点', 'location', id, 'text-button') : ''}`;
   } else if (!requester() && t.kind === 'help') {
     action =
       !a || ['withdrawn', 'rejected'].includes(a.status)
@@ -430,38 +435,42 @@ async function taskPage(id) {
         : (['pending', 'accepted'].includes(a.status) ? btn('退出报名', 'withdraw', a.id) : '') +
           (['accepted', 'checked_in', 'disputed'].includes(a.status) ||
           (a.status === 'cancelled' && a.wasAccepted)
-            ? (a.status === 'accepted'
-                ? btn('到场签到', 'checkin', a.id, 'primary') +
-                  (!a.changeRequest && !t.pending ? btn('申请调整时间', 'request-time-change', a.id) : '')
-                : '') + btn('提交服务记录', 'submit-record', a.id, 'primary')
+            ? btn('提交服务记录', 'submit-record', a.id, 'primary')
             : '');
   } else if (!requester() && t.kind === 'redeem') {
     const bank = await api('/bank');
     const account = bank.accounts.find((a) => a.orgId === t.owner);
     const existing = bank.bookings.find(
-      (b) => b.taskId === id && !['cancelled', 'rejected', 'completed'].includes(b.status),
+      (b) => b.taskId === id && (b.redemptionMode === 'instant' || !['cancelled', 'rejected', 'completed'].includes(b.status)),
     );
     const blocked =
-      t.remaining <= 0
-        ? '名额已满'
+      t.remaining !== null && t.remaining <= 0
+        ? isGoods(t) ? '已兑完' : '名额已满'
         : t.status !== 'published' || t.hasPendingChange
           ? '暂不可预约'
-          : Date.parse(t.deadline) <= Date.now() || Date.parse(t.start) <= Date.now()
+          : !isUnscheduledGoods(t) && (Date.parse(t.deadline) <= Date.now() || Date.parse(t.start) <= Date.now())
             ? '预约已截止'
             : (account?.available || 0) < t.minutes
               ? '对应机构可用时间不足'
               : '';
     action =
-      `<p>本机构可用 ${hours(account?.available)} 小时 · 兑换需要 ${hours(t.minutes)} 小时</p>` +
+      (existing?.redemptionMode === 'instant' ? '<p>兑换成功，请等待工作人员联系你</p>' : `<p>本机构可用 ${hours(account?.available)} 小时 · 兑换需要 ${hours(t.minutes)} 小时</p>`) +
       (existing
-        ? link('查看我的兑换安排', `booking/${existing.id}`, 'primary')
-        : btn(blocked || '申请兑换', 'book', id, 'primary', blocked ? 'disabled' : ''));
+        ? link('查看兑换记录', `booking/${existing.id}`, 'primary')
+        : btn(blocked || (isGoods(t) ? '立即兑换' : '申请兑换'), 'book', id, 'primary', blocked ? 'disabled' : ''));
   }
+  if (t.kind === 'help') return shell(helpDetail(t, {
+    changes: changeBlock(t, a),
+    management: t.mine ? helpManagement(t, recordBlock) : '',
+    participation: a ? `<section class="card"><h2>我的参与</h2>${status(a.status)}${a.reason ? `<p>${esc(a.reason)}</p>` : ''}${recordBlock(a.record, false)}</section>` : '',
+    action,
+  }), 'services', '帮扶需求详情', true, 'task-detail');
   return shell(
-    `<section class="card task-hero"><div class="between"><span class="eyebrow">${t.kind === 'help' ? '助老帮扶' : '时间兑换'}</span>${status(a?.status || t.displayStatus || t.status)}</div><h1>${esc(t.title || '未命名草稿')}</h1><p>${esc(t.orgName)} · ${esc(t.category)}</p><div class="chips"><span>${hours(t.minutes)} 小时</span><span>剩余 ${t.remaining} / ${t.capacity} 名额</span></div></section>${changeBlock(t, a)}<section class="card requester-task-focus" data-task-section="arrangement" tabindex="-1"><h2>服务安排</h2><dl><dt>预约时间</dt><dd>${dateTime(t.start)} — ${dateTime(t.end)}</dd><dt>报名截止</dt><dd>${dateTime(t.deadline)}</dd><dt>服务区域</dt><dd>${esc(t.region)}</dd><dt>详细地址</dt><dd>${esc(t.address || '确认参与后向相关人员展示')}</dd>${t.meeting ? `<dt>集合说明</dt><dd>${esc(t.meeting)}</dd>` : ''}${t.contact ? `<dt>联系机构</dt><dd>${esc(t.contact)} · <a href="tel:${esc(t.phone)}">${esc(t.phone)}</a></dd>` : ''}</dl><div class="actions">${btn('查看到达说明', 'route', id)}${btn('在爱心地图查看', 'view-map', id, 'text-button')}</div></section><section class="card"><h2>需要做什么</h2><p class="pre">${esc(t.description || '暂无说明')}</p><h3>服务要求</h3><p class="pre">${esc(t.requirements || '愿意耐心陪伴，按约定时间参加。')}</p>${t.recipient ? `<h3>受助对象</h3><p>${esc(t.recipient)} · 预计 ${t.recipients} 人次</p>` : ''}${t.cancelReason ? `<p class="notice">取消原因：${esc(t.cancelReason)}</p>` : ''}</section>${t.mine && t.kind === 'help' ? requesterManagement(t) : ''}${a ? `<section class="card"><h2>我的参与</h2>${status(a.status)}${a.changeRequest ? `<p class="notice">时间调整申请已提交，等待需求方确认：${dateTime(a.changeRequest.start)} — ${dateTime(a.changeRequest.end)}</p>` : ''}${a.changeResolution ? `<p>时间调整${a.changeResolution.action === 'accept-request-change' ? '已同意' : '未通过'}：${esc(a.changeResolution.reason)}</p>` : ''}${a.reason ? `<p>${esc(a.reason)}</p>` : ''}${recordBlock(a.record, false)}</section>` : ''}${t.mine && t.kind === 'redeem' ? `<section class="card"><h2>兑换预约</h2>${t.bookings.length ? t.bookings.map(bookingCard).join('') : empty('暂无兑换预约')}</section>` : ''}${t.mine || (a && (['accepted', 'checked_in', 'submitted', 'disputed', 'confirmed'].includes(a.status) || a.wasAccepted)) ? `<section class="card"><h2>与本次服务有关</h2><div class="actions">${btn('留言与评价', 'comments', id)}${btn('服务材料', 'files', id)}${t.mine ? btn('需求变更记录', 'audit', id) : ''}</div></section>` : ''}<div class="sticky-actions actions">${action || '<p>当前状态无待执行操作</p>'}</div>`,
-    t.kind === 'redeem' ? 'bank' : 'services',
-    t.kind === 'redeem' ? '兑换服务详情' : '帮扶需求详情',
+    redeemDetail(t, changeBlock(t, a), action),
+    'bank',
+    isGoods(t) ? '兑换物品详情' : '兑换服务详情',
     true,
+    'redeem-detail',
   );
 }
 async function publishPage(id) {
@@ -469,30 +478,64 @@ async function publishPage(id) {
   const old = !['help', 'redeem'].includes(id) ? await api('/tasks/' + id) : null;
   state.editTask = old;
   const t = old || newPublication(id || 'help', state.user);
-  return shell(publishForm(t, state.user, old), t.kind === 'redeem' ? 'bank' : 'services', old ? '编辑服务' : t.kind === 'redeem' ? '发布兑换服务' : '发布需求', true, 'publish-shell');
+  return shell(publishForm(t, state.user, old), t.kind === 'redeem' ? 'bank' : 'services', t.kind === 'redeem' ? old ? '编辑兑换物品' : '新增兑换物品' : old ? '编辑服务' : '发布需求', true, 'publish-shell');
 }
 let publicationAttempt;
-async function savePublication(mode) {
+async function savePublication() {
   const form=root.querySelector('#publish-form');
   if (!form || form.dataset.saving) return;
-  if (mode !== 'draft' && !validatePublication(form,state.editTask)) return;
+  if (!validatePublication(form,state.editTask)) return;
   const old=state.editTask;
-  const body={...publicationData(form), kind:old?.kind || current().split('/')[1] || 'help', status:old && old.status !== 'draft' ? old.status : mode, revision:old?.revision};
-  const fingerprint=JSON.stringify(body);
+  const body={...publicationData(form), kind:old?.kind || current().split('/')[1] || 'help', status:old?.status || 'published', revision:old?.revision};
+  const fingerprint=JSON.stringify([state.user.id,old?.id || 'new',body]);
   if (publicationAttempt?.fingerprint !== fingerprint) publicationAttempt={fingerprint,key:requestId()};
   form.dataset.saving='1';
+  form.setAttribute('aria-busy','true');
+  form.querySelector('.form-error').textContent='';
+  const status=form.querySelector('.pub-submit-status');
+  status.textContent='正在保存，请稍候…';
+  const controls=[...form.querySelectorAll('input,select,textarea,button'),...(dialog.open ? dialog.querySelectorAll('button') : [])];
+  const disabled=controls.map(control=>control.disabled);
+  controls.forEach(control=>{control.disabled=true;});
+  const confirmButton=dialog.open && dialog.querySelector('button[type=submit]');
+  const confirmLabel=confirmButton?.textContent;
+  if (confirmButton) confirmButton.textContent='正在保存…';
+  dialog.querySelector('.form-error')?.replaceChildren();
+  const controller=new AbortController();
+  const timeout=setTimeout(()=>controller.abort(),15000);
   try {
-    const result=await api('/tasks'+(old ? '/'+old.id : ''),old ? 'PUT' : 'POST',body,publicationAttempt.key);
+    const result=await api('/tasks'+(old ? '/'+old.id : ''),old ? 'PUT' : 'POST',body,publicationAttempt.key,controller.signal);
     publicationAttempt=null; dirty=false; dialog.close();
-    go('task/'+result.id);
-    toast(result.hasPendingChange ? '已通知参与者确认安排变更' : mode === 'draft' ? '草稿已保存，可稍后继续编辑' : '服务内容已保存');
-  } finally { delete form.dataset.saving; }
+    if (!old && body.kind === 'help') {
+      state.tab='discover';
+      state.requesterStatus='';
+      state.requesterTodoFilter='';
+      state.latestPublishedTaskId=result.id;
+      state.scroll.set('#services',0);
+      go('services');
+      toast('需求已发布');
+    } else {
+      go('task/'+result.id);
+      toast(result.hasPendingChange ? '已通知参与者确认安排变更' : body.kind === 'redeem' ? old ? '物品内容已保存' : '兑换物品已发布' : '服务内容已保存');
+    }
+  } catch(error) {
+    if (controller.signal.aborted) throw new Error('连接较慢，尚未确认保存结果。内容已保留，请重试。');
+    if (error instanceof TypeError || error instanceof SyntaxError) throw new Error('网络连接中断，内容已保留。请检查网络后重试。');
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+    delete form.dataset.saving;
+    form.removeAttribute('aria-busy');
+    controls.forEach((control,index)=>{control.disabled=disabled[index];});
+    if (confirmButton) confirmButton.textContent=confirmLabel;
+    status.textContent='';
+  }
 }
 function previewPublication() {
   const form=root.querySelector('#publish-form');
-  if (!form || !validatePublication(form,state.editTask)) return;
+  if (!form || form.dataset.saving || !validatePublication(form,state.editTask)) return;
   const b={...publicationData(form),kind:state.editTask?.kind || current().split('/')[1]};
-  modal('发布前预览',publicationPreview(b,state.user,state.editTask),()=>savePublication('published'),state.editTask && state.editTask.status !== 'draft' ? '确认保存修改' : '确认发布');
+  modal('发布前预览',publicationPreview(b,state.user,state.editTask),()=>savePublication(),state.editTask ? '确认保存修改' : '确认发布');
 }
 
 async function openBankLedger() {
@@ -518,7 +561,6 @@ async function bankPage() {
         offers,
         filter: state.bankFilter,
         tab: state.bankTab,
-        bookingStatus: state.bookingStatus,
       }),
       'bank',
       '',
@@ -535,22 +577,23 @@ async function bankPage() {
   state.bank = bank;
   state.requesterBankTasks = tasks;
   const tab = ['ledger', 'offers', 'bookings'].includes(state.bankTab) ? state.bankTab : 'ledger';
-  return shell(requesterBank({ user: state.user, bank, tasks, tab, filter: state.requesterBankFilter, bookingStatus: state.bookingStatus, bookingWorkOnly: state.requesterBookingWorkOnly }), 'bank', '', false, 'requester-bank');
+  return shell(requesterBank({ user: state.user, bank, tasks, tab, filter: state.requesterBankFilter }), 'bank', '', false, 'requester-bank');
 }
 async function bookingPage(id) {
   const b = await api('/bookings/' + id);
   state.booking = b;
   const org = requester();
+  if (b.redemptionMode === 'instant') return shell(instantRedemptionDetail(b, org), 'bank', '兑换记录', true, 'redemption-detail');
   let actions = '';
   if (b.status === 'pending' && org) actions += btn('接受预约', 'accept-booking', id, 'primary');
   if (['pending', 'accepted'].includes(b.status))
-    actions += btn('申请改约', 'reschedule', id) + btn('取消预约', 'cancel-booking', id);
+    actions += (isUnscheduledGoods(b) ? '' : btn('申请改约', 'reschedule', id)) + btn('取消预约', 'cancel-booking', id);
   if (b.status === 'reschedule' && b.change.by !== state.user.id)
     actions +=
       btn('接受改约', 'accept-reschedule', id, 'primary') + btn('不同意改约', 'decline-reschedule', id);
   if (['accepted', 'disputed'].includes(b.status) && org)
     actions += btn('记录实际履约', 'booking-result', id, 'primary');
-  if (b.status === 'accepted' && org) actions += btn('协商追加服务', 'extra', id);
+  if (b.status === 'accepted' && org && !isGoods(b)) actions += btn('协商追加服务', 'extra', id);
   if (b.extra && !org)
     actions += btn('同意追加', 'accept-extra', id, 'primary') + btn('拒绝追加', 'decline-extra', id);
   if (b.status === 'result_pending' && !org)
@@ -565,7 +608,12 @@ async function bookingPage(id) {
       btn('同意项目变更', 'accept-booking-change', id, 'primary') +
       btn('不同意并取消', 'decline-booking-change', id);
   return shell(
-    `<section class="card"><div class="between"><span class="eyebrow">兑换预约</span>${status(b.status)}</div><h1>${esc(b.title)}</h1><p>${esc(b.orgName)} · 申请人 ${esc(b.applicant)}</p><h2>${dateTime(b.start)} — ${dateTime(b.end)}</h2><p>${esc(b.address)}</p><p>受助对象：${esc(b.recipient)} · <a href="tel:${esc(b.phone)}">${esc(b.phone)}</a></p><p class="pre">${esc(b.needs || '暂无特殊需要')}</p><p>占用 ${b.held} 分钟 · 实际扣除 ${b.charged} 分钟</p>${link('查看项目内容', 'task/' + b.taskId, 'text-button')}</section>${b.task.pending ? changeBlock(b.task) : ''}${b.change ? `<section class="card notice"><h3>改约等待另一方确认</h3><p>${dateTime(b.change.start)} — ${dateTime(b.change.end)}</p><p>${esc(b.change.reason)}</p></section>` : ''}${b.extra ? `<section class="card notice"><h3>追加 ${b.extra.minutes} 分钟待确认</h3><p>${esc(b.extra.reason)}</p></section>` : ''}${b.result ? `<section class="card"><h2>实际履约结果</h2><p>${esc(b.result.content)}</p><p>实际 ${b.result.minutes} 分钟 · ${b.result.recipients} 受助人次</p><p class="muted">申请人确认后结算实际时长，剩余占用自动释放。</p></section>` : ''}${b.dispute || b.reason ? `<section class="card notice">${esc(b.dispute || b.reason)}</section>` : ''}${b.correction ? `<section class="card notice"><h3>扣除更正为 ${b.correction.minutes} 分钟</h3><p>${esc(b.correction.reason)}</p></section>` : ''}<section class="card"><div class="actions">${btn('留言与评价', 'comments', id)}${btn('服务材料', 'files', id)}${btn('变更记录', 'audit', id)}</div></section><div class="sticky-actions actions">${actions || '<p>暂无待执行操作，可通过留言联系对方。</p>'}</div>`,
+    `<section class="card"><span class="eyebrow">兑换记录</span><h1>${esc(b.title)}</h1><p>${esc(b.orgName)} · 申请人 ${esc(b.applicant)}</p>${isUnscheduledGoods(b) ? `<p>申请时间：${dateTime(b.created)}</p>` : `<h2>${dateTime(b.start)} — ${dateTime(b.end)}</h2><p>${esc(b.address)}</p>`}
+    ${isGoods(b) ? `<p>${esc(b.itemName || b.title)} · ${esc(b.specification)}</p>` : ''}${!isUnscheduledGoods(b) && b.fulfillment ? `<p class="pre">${esc(b.fulfillment)}</p>` : ''}
+    <p>${isGoods(b) ? '领取人' : '服务使用人'}：${esc(b.recipient)} · <a href="tel:${esc(b.phone)}">${esc(b.phone)}</a></p>${b.needs ? `<p class="pre">${esc(b.needs)}</p>` : ''}<p>占用 ${b.held} 分钟 · 实际扣除 ${b.charged} 分钟</p>${b.task.status === 'deleted' ? '' : link('查看兑换内容', 'task/' + b.taskId, 'text-button')}</section>
+    ${b.task.pending ? changeBlock(b.task) : ''}${b.change ? `<section class="card notice"><h3>改约等待另一方确认</h3><p>${dateTime(b.change.start)} — ${dateTime(b.change.end)}</p><p>${esc(b.change.reason)}</p></section>` : ''}${b.extra ? `<section class="card notice"><h3>追加 ${b.extra.minutes} 分钟待确认</h3><p>${esc(b.extra.reason)}</p></section>` : ''}
+    ${b.result ? `<section class="card"><h2>${isGoods(b) ? '物品领取结果' : '实际履约结果'}</h2><p>${esc(b.result.content)}</p><p>${isGoods(b) ? '确认扣除时间权益' : '实际服务'} ${b.result.minutes} 分钟${isGoods(b) ? '' : ` · ${b.result.recipients} 受助人次`}</p><p class="muted">申请人确认后结算，剩余占用自动释放。</p></section>` : ''}
+    ${b.dispute || b.reason ? `<section class="card notice">${esc(b.dispute || b.reason)}</section>` : ''}${b.correction ? `<section class="card notice"><h3>扣除更正为 ${b.correction.minutes} 分钟</h3><p>${esc(b.correction.reason)}</p></section>` : ''}<section class="card"><div class="actions">${btn('变更记录', 'audit', id)}</div></section><div class="sticky-actions actions">${actions || '<p>暂无待执行操作。</p>'}</div>`,
     'bank',
     '兑换预约详情',
     true,
@@ -611,7 +659,7 @@ async function render() {
     mapSheet.unmount();
     root.innerHTML = html;
     const publication = root.querySelector('#publish-form');
-    if (publication) { syncPublication(publication); void mountPlacePreview(publication, state.config.map); }
+    if (publication) { syncPublication(publication); if (!publication.classList.contains('pub-redeem')) void mountPlacePreview(publication, state.config.map); }
     mapSheet.mount(state);
     if (document.querySelector('#baidu-map-slot'))
       void baiduMap
@@ -642,22 +690,17 @@ async function render() {
 }
 
 async function onAction(action, id, button) {
-  if (action === 'pub-more') {
-    const form = root.querySelector('#publish-form');
-    form.querySelector('.pub-more').open = true;
-    form.elements.namedItem(id)?.focus();
-    return;
-  }
-  if (action === 'pub-duration') {
-    const form=root.querySelector('#publish-form');
-    if (!form.elements.start.value) { form.elements.start.focus(); return; }
-    form.elements.end.value=localTime(Date.parse(form.elements.start.value)+Number(id)*60000);
-    syncPublication(form, 'end'); dirty=true; return;
-  }
+  if (action === 'task-section') return focusTaskSection(id);
+  if (action === 'task-tools' && state.task?.mine && state.task.id === id)
+    return modal('需求管理', helpTaskTools(state.task));
   if (action === 'pub-place' || action === 'pub-org-address') {
     const form=root.querySelector('#publish-form');
     const currentPlace=form.elements.place.value ? JSON.parse(form.elements.place.value) : null;
     return choosePlace({ config:state.config.map, place:currentPlace, region:form.elements.region.value,
+      user: state.user,
+      loadRecent: async () => (await api('/tasks?kind=help&scope=mine'))
+        .sort((a, b) => (b.updated || b.created).localeCompare(a.updated || a.created))
+        .map(task => task.place).filter(Boolean),
       query:action === 'pub-org-address' ? state.user.address : '', onChoose:place=>{
         if (!form.isConnected) return;
         form.elements.place.value=JSON.stringify(place);
@@ -674,8 +717,6 @@ async function onAction(action, id, button) {
   if (action === 'requester-bank-metric') {
     state.bankTab = id === 'bookings' ? 'bookings' : 'ledger';
     state.requesterBankFilter = id === 'pending' ? { mode: 'pending' } : {};
-    state.requesterBookingWorkOnly = id === 'bookings';
-    state.bookingStatus = '';
     if (current() !== 'bank') return go('bank');
     await render();
     root.querySelector('.rb-content')?.scrollIntoView({ block: 'start' });
@@ -683,7 +724,7 @@ async function onAction(action, id, button) {
   }
   if (action === 'requester-completed') {
     state.tab = 'discover';
-    state.requesterStatus = 'completed';
+    state.requesterStatus = 'history';
     state.filter = {};
     return go('services');
   }
@@ -691,22 +732,16 @@ async function onAction(action, id, button) {
     state.requesterBankFilter = {};
     return render();
   }
-  if (action === 'requester-booking-work') {
-    state.requesterBookingWorkOnly = !state.requesterBookingWorkOnly;
-    return render();
-  }
   if (action === 'requester-bank-filter') {
     const f = state.requesterBankFilter;
     const options = {
       date: ['筛选日期', field('date', '记录日期（留空不限）', f.date || '', 'date', false)],
-      task: ['筛选任务', select('task', '帮扶任务', [['', '全部任务'], ...state.requesterBankTasks.filter((t) => t.kind === 'help').map((t) => [t.id, t.title || '未命名草稿'])], f.task)],
-      'booking-status': ['筛选预约状态', select('bookingStatus', '预约状态', [['', '全部状态'], ...['pending', 'accepted', 'reschedule', 'result_pending', 'disputed', 'completed', 'cancelled', 'rejected'].map((value) => [value, labels[value]])], state.bookingStatus)],
+      task: ['筛选任务', select('task', '帮扶任务', [['', '全部任务'], ...state.requesterBankTasks.filter((t) => t.kind === 'help').map((t) => [t.id, t.title || '未命名服务'])], f.task)],
     };
     const option = options[id];
     if (!option) return;
     return modal(option[0], option[1] + btn('取消', 'close', '', 'text-button'), async (b) => {
-      if (id === 'booking-status') state.bookingStatus = b.bookingStatus;
-      else state.requesterBankFilter = { ...f, ...b };
+      state.requesterBankFilter = { ...f, ...b };
       dialog.close();
       await render();
     }, '应用筛选');
@@ -735,14 +770,10 @@ async function onAction(action, id, button) {
   if (action === 'profile-help')
     return modal(
       '帮助与反馈',
-      `<details open><summary>如何积累时间与点亮地图？</summary><p>报名并完成真实服务，需求方确认有效时长后，时间入账并点亮服务所在地区。同一地点多次服务会保留记录，不重复增加地点数。</p></details><details><summary>为什么可用时间与累计贡献不同？</summary><p>待确认时间不能使用，兑换预约会占用对应机构的时间。兑换完成会扣除可用权益，但累计贡献与足迹保留。</p></details><details><summary>如何查看报名与兑换进度？</summary><p>帮扶任务在服务大厅的“我参与的”跟进；兑换申请在时间银行的“我的兑换”跟进。消息可直接打开相关任务。</p></details><div class="actions">${btn('使用说明与隐私约定', 'terms')}${btn('意见反馈', 'feedback', '', 'primary')}</div>`,
+      `<details open><summary>如何积累时间与点亮地图？</summary><p>报名并完成真实服务，需求方确认有效时长后，时间入账并点亮服务所在地区。同一地点多次服务会保留记录，不重复增加地点数。</p></details><details><summary>为什么可用时间与累计贡献不同？</summary><p>待确认时间不能使用。确认兑换物品后直接扣除对应机构的可用时间权益，累计贡献与足迹保留。</p></details><details><summary>如何查看报名与兑换进度？</summary><p>帮扶任务在服务大厅的“我参与的”跟进；物品兑换成功后请等待工作人员联系你，可在时间银行的“我的兑换”查看记录。消息可直接打开相关详情。</p></details><div class="actions">${btn('使用说明与隐私约定', 'terms')}${btn('意见反馈', 'feedback', '', 'primary')}</div>`,
     );
   if (action === 'bank-reset') {
     state.bankFilter = {};
-    return render();
-  }
-  if (action === 'bank-booking-status') {
-    state.bookingStatus = id;
     return render();
   }
   if (action === 'bank-ledger') {
@@ -774,9 +805,8 @@ async function onAction(action, id, button) {
           ],
           f.org,
         ) +
-          '<p class="notice">选择机构后，同步查看该机构账户、可兑换服务和本人的兑换记录。不同机构的时间权益分别使用。</p>',
+          '<p class="notice">选择机构后，同步查看该机构账户、可兑换物品和本人的兑换记录。不同机构的时间权益分别使用。</p>',
       ],
-      date: ['预约日期', field('date', '选择预约日期（留空不限）', f.date || '', 'date', false)],
       minutes: [
         '所需时长',
         select(
@@ -799,10 +829,8 @@ async function onAction(action, id, button) {
           'sort',
           '选择排序方式',
           [
-            ['', '默认排序'],
-            ['start', '预约时间优先'],
+            ['', '最新发布'],
             ['minutes', '所需时长从少到多'],
-            ['remaining', '剩余名额从多到少'],
           ],
           f.sort,
         ),
@@ -838,25 +866,6 @@ async function onAction(action, id, button) {
     state.requesterTodoFilter = state.requesterTodoFilter === id ? '' : id;
     return render();
   }
-  if (action === 'request-time-change') {
-    const t = state.task;
-    return modal(
-      '申请调整服务时间',
-      `${field('start', '建议开始时间', localTime(t.start), 'datetime-local')}${field('end', '建议结束时间', localTime(t.end), 'datetime-local')}${field('reason', '调整原因', '', 'textarea')}<p class="muted">需求方同意并完成相关人员确认后，新安排生效。</p>`,
-      (b) => mutate('/applications/' + id, { ...b, action: 'request-change' }),
-      '提交申请',
-    );
-  }
-  if (action === 'accept-request-change') {
-    const a = state.task.applications.find((x) => x.id === id);
-    return modal(
-      '确认调整时间',
-      `<p>${esc(a.volunteer.name)}申请调整为：</p><p>${dateTime(a.changeRequest.start)} — ${dateTime(a.changeRequest.end)}</p><p>${esc(a.changeRequest.reason)}</p><p class="muted">其他已确认志愿者仍需确认新安排。</p>`,
-      () => mutate('/applications/' + id, { action }),
-      '同意调整',
-    );
-  }
-  if (action === 'reject-request-change') return reason('不通过时间调整', '/applications/' + id, action);
   if (action === 'handle-withdrawal')
     return modal(
       '处理人员退出',
@@ -870,23 +879,6 @@ async function onAction(action, id, button) {
       category: [
         '服务类型',
         select('category', '选择服务类型', [['', '全部类型'], ...hallCategories], f.category),
-      ],
-      distance: [
-        '距离与区域',
-        field('region', '服务区域（留空查看全部）', f.region || state.city, 'text', false) +
-          select(
-            'distance',
-            '距离范围',
-            [
-              ['', '不限距离'],
-              ['1', '1 公里内'],
-              ['3', '3 公里内'],
-              ['5', '5 公里内'],
-              ['10', '10 公里内'],
-            ],
-            f.distance,
-          ) +
-          '<p class="notice">地图路线尚未接入，可先按区域查找。选择距离范围时，无法确认距离的需求不会计入结果。</p>',
       ],
       date: ['预约日期', field('date', '选择预约日期（留空不限）', f.date, 'date', false)],
       minutes: [
@@ -917,18 +909,6 @@ async function onAction(action, id, button) {
           ) +
           '<p class="notice">可用时间包含服务、往返出行和 10 分钟缓冲；未知路线耗时的需求不会计入推荐。</p>',
       ],
-      sort: [
-        '排序方式',
-        select(
-          'sort',
-          '选择排序方式',
-          [
-            ['distance', '距离优先'],
-            ['start', '开始时间优先'],
-          ],
-          f.sort || 'distance',
-        ) + '<p class="muted">距离未知的需求按开始时间排列；接入路线后优先显示距离已知的需求。</p>',
-      ],
       org: [
         '服务机构',
         select(
@@ -957,7 +937,7 @@ async function onAction(action, id, button) {
   }
   if (action === 'hall-clear-fields') {
     for (const input of dialog.querySelectorAll('input, select'))
-      input.value = input.name === 'sort' ? 'distance' : '';
+      input.value = '';
     return;
   }
   if (action === 'close') {
@@ -1017,15 +997,13 @@ async function onAction(action, id, button) {
   if (action === 'history') {
     state.tab = requester() ? 'discover' : 'mine';
     state.filter = {};
-    state.requesterStatus = '';
+    state.requesterStatus = requester() ? 'history' : '';
     go('services');
     return;
   }
   if (action === 'my-bookings') {
     state.bankTab = 'bookings';
-    state.bookingStatus = '';
     state.bankFilter = {};
-    state.requesterBookingWorkOnly = false;
     go('bank');
     return;
   }
@@ -1038,18 +1016,21 @@ async function onAction(action, id, button) {
     return render();
   }
   if (action === 'map-task') {
+    baiduMap.requestRecenter();
     state.selectedTask = id;
     state.selectedCell = null;
     state.collapsed = false;
     return render();
   }
   if (action === 'map-cell') {
+    baiduMap.requestRecenter();
     state.selectedCell = id;
     state.selectedTask = null;
     state.collapsed = false;
     return render();
   }
   if (action === 'map-clear') {
+    if (!state.selectedTask && !state.selectedCell) return;
     state.selectedTask = null;
     state.selectedCell = null;
     return render();
@@ -1084,24 +1065,12 @@ async function onAction(action, id, button) {
   }
   if (action === 'map-zoom-in') return baiduMap.zoom(1);
   if (action === 'map-zoom-out') return baiduMap.zoom(-1);
-  if (action === 'map-this-area') {
-    const region = await baiduMap.centerRegion();
-    if (!region) throw new Error('没有识别到当前区域，请手动选择');
-    state.city = (region.district || region.city).replace(/市$/, '');
-    baiduMap.lastCity = state.city;
-    baiduMap.fittedCity = state.city;
-    state.selectedCell = null;
-    state.selectedTask = null;
-    return render();
-  }
   if (action === 'map-place') {
     const place = state.placeResults?.[Number(id)];
     if (!place) return;
     dialog.close();
     baiduMap.focus(place.point, place.title);
-    toast('已定位到所选地点；可拖动地图后查看此区域的需求');
-    const area = document.querySelector('[data-action="map-this-area"]');
-    if (area) area.hidden = false;
+    toast('已定位到所选地点');
     return;
   }
   if (['map-locate', 'map-region-locate', 'map-auto-locate'].includes(action)) {
@@ -1308,7 +1277,7 @@ async function onAction(action, id, button) {
       '服务区域与爱心成果',
       '<p class="map-filter-note">' +
         (state.config?.map?.provider === 'baidu'
-          ? '百度地图 · 标记为约 500 米网格中心或区域概略位置。'
+          ? '百度地图 · 沿真实区域边界展示成果，标记为概略位置；缺少边界的区域仅显示标记。'
           : '插画示意 · 标记按区域排列，不代表实际地理位置。') +
         '已点亮仅代表本产品已有确认服务，并不表示所有需求均已解决。</p><h3>已点亮地区</h3><div class="map-region-list">' +
         (state.cells
@@ -1341,6 +1310,7 @@ async function onAction(action, id, button) {
     return render();
   }
   if (action === 'view-map') {
+    baiduMap.requestRecenter();
     state.city = state.task.region;
     state.mapScope = 'all';
     state.selectedTask = id;
@@ -1349,11 +1319,7 @@ async function onAction(action, id, button) {
     go('map');
     return;
   }
-  if (action === 'route')
-    return modal(
-      '到达与联系说明',
-      `<p class="notice">百度地图路线待接入，暂不能提供真实距离和预计耗时。</p><p>${esc(state.task.address || state.task.region)}</p><p>${esc(state.task.meeting || '请与机构确认集合安排。')}</p>${state.task.phone ? `<a class="primary wide" href="tel:${esc(state.task.phone)}">联系 ${esc(state.task.contact)}</a>` : ''}${btn('复制文字地址', 'copy-address', '', 'secondary wide')}`,
-    );
+  if (action === 'route') return openTaskRoute(state.task, state.config.map);
   if (action === 'copy-address') {
     await navigator.clipboard.writeText(state.task.address || state.task.region);
     toast('地址已复制');
@@ -1429,54 +1395,21 @@ async function onAction(action, id, button) {
         .join('') || empty('暂无变更记录'),
     );
   }
-  if (action === 'comments') {
-    const list = await api('/comments/' + id);
-    return modal(
-      '任务留言与评价',
-      `<div class="comments">${list.map((c) => `<article><b>${esc(c.name)} · ${c.type === 'review' ? '评价' : '留言'}</b><p class="pre">${esc(c.content)}</p><small>${dateTime(c.created)}</small></article>`).join('') || '<p>还没有留言，可在这里沟通本次安排。</p>'}</div>${select(
-        'type',
-        '内容类型',
-        [
-          ['message', '留言'],
-          ['review', '服务评价'],
-        ],
-      )}${field('content', '内容', '', 'textarea')}`,
-      (b) => mutate('/comments/' + id, b),
-      '发送',
-    );
-  }
-  if (action === 'files') {
-    const files = await api('/files/' + id);
-    return modal(
-      '本次服务材料',
-      `${files.map((f) => `<p><a href="/api/attachments/${esc(f.id)}" download>${esc(f.name)}</a> · ${dateTime(f.created)}</p>`).join('') || '<p>暂无附件</p>'}${state.config.adapters.upload === 'local' ? `<p class="notice">开发环境附件存放本地，未接入 COS。仅相关参与者可访问。请勿上传不必要的敏感资料。</p>${field('file', '选择图片或 PDF（最大 3MB）', '', 'file', true, 'accept="image/png,image/jpeg,image/webp,application/pdf"')}` : '<p class="notice">COS 尚未配置，暂不开放附件上传。仍可通过服务文字记录完成核实。</p>'}`,
-      state.config.adapters.upload === 'local'
-        ? async (b, form) => {
-            const file = form.elements.file.files[0];
-            if (file.size > 3000000) throw new Error('附件不能超过 3MB');
-            const base64 = await new Promise((resolve, reject) => {
-              const r = new FileReader();
-              r.onload = () => resolve(r.result.split(',')[1]);
-              r.onerror = reject;
-              r.readAsDataURL(file);
-            });
-            await mutate('/attachments', { ref: id, name: file.name, type: file.type, base64 });
-          }
-        : null,
-      '上传材料',
-    );
+  if (action === 'remove-offer-cover') {
+    const form = root.querySelector('#publish-form');
+    if (form) { dirty = true; removeRedeemCover(form); }
+    return;
   }
   if (action === 'preview-task') return previewPublication();
   if (action === 'apply')
     return modal(
       '报名参与',
-      `<p>报名后等待机构确认。通过后可查看集合地址。</p>${field('message', '给机构的留言', '', 'textarea', false)}`,
+      `${field('applicantName', '姓名', state.user.name, 'text', true, 'maxlength="80" autocomplete="name"')}${field('applicantPhone', '联系方式', state.user.phone, 'tel', true, 'maxlength="30" autocomplete="tel"')}`,
       (b) => mutate('/tasks/' + id + '/apply', b),
       '提交报名',
     );
   const simpleApps = {
     'accept-app': 'accept',
-    checkin: 'checkin',
     'accept-change': 'change',
     'decline-change': 'change',
   };
@@ -1491,11 +1424,17 @@ async function onAction(action, id, button) {
       '/applications/' + id,
       action === 'withdraw' ? 'withdraw' : 'reject',
     );
-  if (['pause-task', 'publish-task', 'copy-task'].includes(action)) {
-    const result = await mutate('/tasks/' + id + '/action', {
-      action: { 'pause-task': 'pause', 'publish-task': 'publish', 'copy-task': 'copy' }[action],
+  if (['pause-task', 'publish-task'].includes(action)) {
+    await mutate('/tasks/' + id + '/action', {
+      action: { 'pause-task': 'pause', 'publish-task': 'publish' }[action],
     });
-    if (action === 'copy-task') go('publish/' + result.id);
+    return;
+  }
+  if (action === 'delete-offer') {
+    await api('/tasks/' + id, 'DELETE', {});
+    state.bankTab = 'offers';
+    go('bank');
+    toast('物品已删除');
     return;
   }
   if (action === 'cancel-task') return reason('取消这项需求', '/tasks/' + id + '/action', 'cancel');
@@ -1506,14 +1445,18 @@ async function onAction(action, id, button) {
       (b) => mutate('/tasks/' + id + '/action', { action: 'location', ...b }),
     );
   if (action === 'submit-record') {
-    const t = state.task,
-      a = t.application;
-    return modal(
-      '提交实际服务记录',
-      `${field('start', '实际开始', localTime(a.record?.start || t.start), 'datetime-local')}${field('end', '实际结束', localTime(a.record?.end || new Date(Math.min(Date.now(), Date.parse(t.end)))), 'datetime-local')}${field('rest', '休息分钟', a.record?.rest || 0, 'number', true, 'min="0" max="1440"')}${field('content', '实际完成的服务', a.record?.content, 'textarea')}${field('note', '未签到／补录／异常说明', a.record?.note, 'textarea', !a.checkin)}<p>有效时长按起止时间减去休息计算；由机构核实后入账。</p>`,
-      (b) => mutate('/applications/' + id, { action: 'submit', ...b }),
-      '提交核实',
-    );
+    if (!mayDiscardProfileForm()) return;
+    dialog.className = 'service-completion-dialog';
+    dialog.dataset.profileSnapshot = '';
+    dialog.innerHTML = serviceCompletionDialog(state.task);
+    modalSubmit = async () => {
+      await api('/applications/' + id, 'POST', { action: 'complete' });
+      dialog.close();
+      toast('已提交，待机构确认');
+      await render();
+    };
+    if (!dialog.open) dialog.showModal();
+    return;
   }
   if (['confirm-record', 'resolve-record', 'correct-record'].includes(action)) {
     const r = state.records[id];
@@ -1532,15 +1475,27 @@ async function onAction(action, id, button) {
   if (action === 'revoke-record')
     return reason('撤销无效服务记录', '/records/' + id, 'revoke', { recipients: 0 });
   if (action === 'dispute-record') return reason('对服务结果提出异议', '/records/' + id, 'dispute');
+  if (action === 'book' && isGoods(state.task))
+    return modal(
+      '确认兑换',
+      `<p>兑换 ${esc(state.task.itemName)} · ${esc(state.task.specification)}</p><p>确认后扣除 ${hours(state.task.minutes)} 小时，工作人员将通过以下电话联系你。</p>${field('recipient', '申请人姓名', state.user.name, 'text', true, 'maxlength="100" autocomplete="name"')}${field('phone', '联系电话', state.user.contactPhone || state.user.phone, 'tel', true, 'maxlength="30" autocomplete="tel"')}`,
+      async (b) => {
+        const booking = await api('/tasks/' + id + '/book', 'POST', { ...b, consent: true });
+        dialog.close();
+        state.bankTab = 'bookings';
+        go('booking/' + booking.id);
+        toast('兑换成功，请等待工作人员联系你');
+      },
+      '确认兑换',
+    );
   if (action === 'book')
     return modal(
       '申请时间兑换',
-      `<p>将占用 ${state.task.minutes} 分钟对应机构的时间权益，待双方确认履约后扣除。</p>${field('recipient', '受助对象（本人或家中老人）')}${field('phone', '联系电话', state.user.phone, 'tel')}${field('needs', '需要协助的事项', '', 'textarea', false)}<label class="check-row"><input name="consent" type="checkbox" required>我已获得受助者同意并核对服务安排</label>`,
+      `<p>本次兑换 1 ${isGoods(state.task) ? '份物品' : '个服务名额'}，将占用 ${hours(state.task.minutes)} 小时对应机构的时间权益，双方确认完成后扣除。</p>${field('recipient', isGoods(state.task) ? '领取人' : '服务使用人', state.user.name)}${field('phone', '联系电话', state.user.phone, 'tel')}${field('needs', '备注（选填）', '', 'textarea', false)}<label class="check-row"><input name="consent" type="checkbox" required>${isGoods(state.task) ? '我已核对物品规格和兑换所需时长' : '我已获得使用人同意并核对服务安排'}</label>`,
       async (b) => {
         const booking = await api('/tasks/' + id + '/book', 'POST', { ...b, consent: b.consent === 'on' });
         dialog.close();
         state.bankTab = 'bookings';
-        state.bookingStatus = '';
         go('booking/' + booking.id);
         toast('申请已提交，时间已占用，等待需求方确认');
       },
@@ -1578,13 +1533,13 @@ async function onAction(action, id, button) {
       '记录实际履约结果',
       field(
         'minutes',
-        '实际服务分钟',
+        isGoods(state.booking) ? '确认扣除的时间权益（分钟）' : '实际服务分钟',
         state.booking.held,
         'number',
         true,
         `min="0" max="${state.booking.held}"`,
       ) +
-        field('recipients', '受助人次', 1, 'number', true, 'min="0"') +
+        (isGoods(state.booking) ? '<input type="hidden" name="recipients" value="1">' : field('recipients', '受助人次', 1, 'number', true, 'min="0"')) +
         field('content', '实际完成内容／未完成原因', '', 'textarea'),
       (b) => mutate('/bookings/' + id, { ...b, action: 'result' }),
       '提交申请人确认',
@@ -1599,7 +1554,7 @@ async function onAction(action, id, button) {
   if (action === 'complete-booking')
     return modal(
       '确认兑换结果',
-      `<p>${esc(state.booking.result.content)}</p><p>确认实际服务 ${state.booking.result.minutes} 分钟，结算后释放其余占用。</p>`,
+      `<p>${esc(state.booking.result.content)}</p><p>确认${isGoods(state.booking) ? '领取物品并扣除时间权益' : '实际服务'} ${state.booking.result.minutes} 分钟，结算后释放其余占用。</p>`,
       () => mutate('/bookings/' + id, { action: 'complete' }),
       '确认完成并结算',
     );
@@ -1695,7 +1650,6 @@ document.addEventListener('submit', async (event) => {
       state.bankFilter = {};
       state.bankInitialized = false;
       state.bankLedgerFilter = {};
-      state.bookingStatus = '';
       go('map');
       await render();
     }
@@ -1716,8 +1670,7 @@ document.addEventListener('submit', async (event) => {
       await openBankLedger();
     }
     if (form.id === 'publish-form') {
-      if (submit?.value === 'draft') await savePublication('draft');
-      else previewPublication();
+      previewPublication();
     }
   } catch (error) {
     errorIn(form, error);
@@ -1733,15 +1686,20 @@ document.addEventListener('input', (e) => {
 document.addEventListener('change', async (e) => {
   const form=e.target.closest('#publish-form');
   if (form) { dirty=true; syncPublication(form,e.target.name); }
+  if (form && e.target.name === 'coverFile') {
+    try {
+      await uploadRedeemCover(form, api);
+    } catch (error) {
+      e.target.setCustomValidity(error.message);
+      form.querySelector('#offer-cover-note').textContent = error.message;
+    }
+    return;
+  }
   if (e.target.id === 'show-needs') {
     state.showNeeds = e.target.checked;
     await render();
   }
   const name = e.target.name;
-  if (name === 'booking-status') {
-    state.bookingStatus = e.target.value;
-    await render();
-  }
   if (name === 'ledger-type') {
     state.ledgerType = e.target.value;
     await render();
@@ -1752,6 +1710,7 @@ document.addEventListener('change', async (e) => {
   }
 });
 dialog.addEventListener('cancel', (e) => {
+  if (root.querySelector('#publish-form[data-saving]')) { e.preventDefault(); return; }
   if (!mayDiscardProfileForm()) e.preventDefault();
 });
 window.addEventListener('beforeunload', (e) => {
@@ -1761,6 +1720,11 @@ window.addEventListener('beforeunload', (e) => {
   }
 });
 window.addEventListener('hashchange', async () => {
+  if (root.querySelector('#publish-form[data-saving]')) {
+    history.replaceState(null, '', lastRoute);
+    toast('正在保存，请稍候');
+    return;
+  }
   if (dirty && !confirm('当前修改尚未保存，确认离开？')) {
     history.replaceState(null, '', lastRoute);
     return;

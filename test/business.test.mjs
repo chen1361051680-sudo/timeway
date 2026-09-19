@@ -58,6 +58,36 @@ function taskInput(extra = {}) {
     ...extra,
   };
 }
+test('志愿者直接提交服务记录，补充说明选填，需求方核实后入账', t => {
+  const { s, d, org, vol } = setup(t);
+  const task = d.createTask(org, taskInput());
+  const app = d.apply(vol, task.id, {});
+  d.applicationAction(org, app.id, { action: 'accept' });
+  const accepted = s.get('application', app.id);
+  assert.throws(() => d.applicationAction(vol, app.id, { action: 'checkin' }), /未知报名操作/);
+  assert.deepEqual(s.get('application', app.id), accepted);
+  assert.throws(() => d.applicationAction(vol, app.id, {
+    action: 'submit', start: task.start, end: task.end, content: '完成陪伴交流',
+  }), /不能提前提交未来服务/);
+  const start = new Date(Date.now() - 7200000).toISOString();
+  const end = new Date(Date.now() - 3600000).toISOString();
+  s.put('task', { ...s.get('task', task.id), start, end });
+  const submission = { action: 'submit', start, end, content: '完成陪伴交流' };
+  const result = d.applicationAction(vol, app.id, submission);
+  assert.equal(result.status, 'submitted');
+  assert.equal(result.record.note, '');
+  assert.equal(result.record.submitted, 60);
+  assert.equal(s.get('application', app.id).checkin, undefined);
+  assert.equal(s.db.prepare('SELECT COUNT(*) AS count FROM ledger').get().count, 0);
+  d.applicationAction(vol, app.id, submission);
+  assert.equal(s.all('record').length, 1);
+  d.recordAction(org, app.id, { action: 'confirm', minutes: 60, recipients: 1 });
+  assert.equal(s.get('record', app.id).confirmed, 60);
+  const ledger = s.db.prepare('SELECT COUNT(*) AS count, SUM(minutes) AS minutes FROM ledger WHERE user_id = ?').get(vol.id);
+  assert.equal(ledger.count, 1);
+  assert.equal(ledger.minutes, 60);
+});
+
 function confirmService(ctx, vol = ctx.vol) {
   const { s, d, org } = ctx;
   const task = d.createTask(org, taskInput());
@@ -83,7 +113,8 @@ test('help → approval → confirmation → reservation → partial redemption;
   const c = setup(t),
     { s, d, org, vol, other } = c;
   const task = d.createTask(org, taskInput());
-  assert.equal(d.task(other, task.id).address, undefined);
+  assert.equal(d.task(other, task.id).address, task.address);
+  assert.equal(d.task(other, task.id).phone, undefined);
   const a = d.apply(vol, task.id, {}),
     b = d.apply(other, task.id, {});
   assert.equal(d.apply(vol, task.id, {}).id, a.id);
@@ -191,12 +222,10 @@ test('team and repeated area events deduplicate; missing locations can be correc
 });
 
 test('accepted service cancellation supports genuine partial work and reapplication releases capacity', (t) => {
-  const { s, d, org, vol, other } = setup(t),
+  const { s, d, org, vol } = setup(t),
     task = d.createTask(org, taskInput()),
     a = d.apply(vol, task.id, {});
-  assert.throws(() => d.comments(vol, task.id), /无权/);
   d.applicationAction(org, a.id, { action: 'accept' });
-  assert.deepEqual(d.comments(vol, task.id), []);
   d.applicationAction(vol, a.id, { action: 'withdraw', reason: '安排冲突' });
   const repeated = d.apply(vol, task.id, {});
   assert.equal(repeated.status, 'pending');
@@ -215,7 +244,6 @@ test('accepted service cancellation supports genuine partial work and reapplicat
   });
   d.recordAction(org, a.id, { action: 'confirm', minutes: 30, recipients: 1 });
   assert.equal(d.account(vol.id, org.id).available, 30);
-  assert.throws(() => d.comment(other, task.id, { content: '越权留言' }), /仅相关/);
 });
 
 test('reschedule, extra consent and disputes cannot spend more than issuer credit', (t) => {

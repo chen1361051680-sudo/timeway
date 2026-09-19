@@ -7,6 +7,7 @@
     "node": ">=24 <25"
   },
   "scripts": {
+    "dev": "node --watch --watch-preserve-output --watch-path=src --watch-path=server.mjs server.mjs",
     "start": "node server.mjs",
     "check": "node scripts/check.mjs",
     "test": "node --test test/*.test.mjs",
@@ -15,8 +16,10 @@
     "test:map": "node e2e/map.mjs",
     "test:hall": "node e2e/hall.mjs",
     "test:requester-hall": "node e2e/requester-hall.mjs",
+    "test:task-detail": "node e2e/task-detail.mjs",
     "test:requester-account": "node e2e/requester-account.mjs",
     "test:publish": "node e2e/publish.mjs",
+    "test:redeem": "node e2e/redeem.mjs",
     "test:profile": "node e2e/profile.mjs",
     "test:bank": "node e2e/bank.mjs",
     "backup": "node scripts/backup.mjs",
@@ -27,6 +30,8 @@
     "prettier": "^3.9.6"
   },
   "dependencies": {
-    "coordtransform": "2.1.2"
+    "coordtransform": "2.1.2",
+    "cos-nodejs-sdk-v5": "^3.0.0",
+    "sharp": "^0.35.4"
   }
 }

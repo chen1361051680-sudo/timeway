@@ -43,6 +43,17 @@ export class Store {
       throw new Error('数据库环境不匹配，禁止混用开发与生产数据');
     }
     this.db.prepare('INSERT OR IGNORE INTO metadata VALUES (?,?)').run('environment', environment);
+    // Retired publishing state: remove only saved drafts and their replay responses.
+    // Published services, accounts, audit history and service records remain intact.
+    this.transaction(() => {
+      this.db.exec(`
+        DELETE FROM idempotency
+          WHERE json_extract(result, '$.kind') IN ('help', 'redeem')
+            AND json_extract(result, '$.status') = 'draft';
+        DELETE FROM entities
+          WHERE kind = 'task' AND json_extract(data, '$.status') = 'draft';
+      `);
+    });
   }
   all(kind) {
     return this.db

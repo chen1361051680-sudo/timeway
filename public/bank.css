@@ -475,6 +475,30 @@
   font-size: 15px;
   color: var(--bank-ink);
   margin: 0;
+  overflow-wrap: anywhere;
+}
+.bank-booking-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.bank-booking-image {
+  display: block;
+  width: 88px;
+  height: 88px;
+  flex-shrink: 0;
+  border-radius: 12px;
+  object-fit: contain;
+  background: #f7f8fa;
+}
+.bank-booking-content {
+  flex: 1;
+  min-width: 0;
+}
+.bank-booking-content p {
+  margin: 6px 0 0;
+  line-height: 1.6;
 }
 .bank-booking-card .between {
   gap: 10px;

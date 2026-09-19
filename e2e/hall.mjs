@@ -5,7 +5,7 @@ import { once } from 'node:events';
 import { mkdir } from 'node:fs/promises';
 
 const server = createTimewayServer({ environment: 'test', databasePath: ':memory:' });
-const { session, tasks, routes } = seedHall(server);
+const { session, tasks } = seedHall(server);
 server.listen(0, '127.0.0.1');
 await once(server, 'listening');
 const base = `http://127.0.0.1:${server.address().port}`;
@@ -41,7 +41,7 @@ try {
   await expect(page.getByRole('heading', { name: '服务大厅', exact: true })).toBeVisible();
   await expect(cards).toHaveCount(6);
   await expect(page.locator('.hall-count')).toHaveText('2');
-  await expect(page.locator('.hall-arrival').first()).toHaveText('到达时间待确认');
+  await expect(page.locator('.hall-arrival')).toHaveCount(0);
   await expect(page.getByText('不可公开的测试私人门牌301')).toHaveCount(0);
   await expect(page.locator('.bottom-nav [aria-current=page]')).toHaveText('服务大厅');
   await page.evaluate(() => document.fonts.ready);
@@ -55,9 +55,34 @@ try {
     await page.screenshot({ path: `tmp/ui-checks/hall-${width}.png`, fullPage: true });
     if (width === 470) await page.screenshot({ path: 'tmp/ui-checks/hall-preview.png' });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-    for (const card of await cards.all())
+    for (const card of await cards.all()) {
       expect(await card.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+      expect(await card.evaluate((el) => {
+        const detail = el.querySelector('.hall-detail').getBoundingClientRect();
+        const chips = el.querySelector('.hall-chips').getBoundingClientRect();
+        const badge = el.querySelector('.hall-card-bottom > :first-child').getBoundingClientRect();
+        return detail.top >= chips.bottom + 5 &&
+          (detail.left >= badge.right + 5 || detail.top >= badge.bottom + 5);
+      })).toBe(true);
+    }
   }
+  await page.setViewportSize({ width: 320, height: 700 });
+  await page.evaluate(() => document.documentElement.classList.add('large-text'));
+  const firstHeading = cards.first().locator('h3');
+  const originalTitle = await firstHeading.textContent();
+  await firstHeading.evaluate((el) => { el.textContent = '陪伴社区长者前往医院挂号取药并协助完成就诊安排'; });
+  for (const card of await cards.all()) {
+    expect(await card.evaluate((el) => {
+      const detail = el.querySelector('.hall-detail').getBoundingClientRect();
+      const chips = el.querySelector('.hall-chips').getBoundingClientRect();
+      const badge = el.querySelector('.hall-card-bottom > :first-child').getBoundingClientRect();
+      return el.scrollWidth <= el.clientWidth + 1 && detail.top >= chips.bottom + 5 &&
+        (detail.left >= badge.right + 5 || detail.top >= badge.bottom + 5);
+    })).toBe(true);
+  }
+  await page.screenshot({ path: 'tmp/ui-checks/hall-card-large.png', fullPage: true });
+  await firstHeading.evaluate((el, title) => { el.textContent = title; }, originalTitle);
+  await page.evaluate(() => document.documentElement.classList.remove('large-text'));
   await page.setViewportSize({ width: 390, height: 844 });
   await search.fill('第一人民医院');
   await search.press('Enter');
@@ -84,9 +109,9 @@ try {
   await expect(cards).toHaveCount(1);
   await expect(cards).toContainText('陪诊协助');
   await page.locator('[data-action=reset-filter]').click();
-  await applyFilter('distance', 'distance', '3');
+  await applyFilter('minutes', 'minutes', '30');
   await expect(cards).toHaveCount(0);
-  await expect(page.getByText('暂时无法确认路程与往返耗时，请放宽距离或可用时间条件。')).toBeVisible();
+  await expect(page.getByText('暂无符合条件的需求')).toBeVisible();
   await page.screenshot({ path: 'tmp/ui-checks/hall-empty.png' });
   await page.getByRole('button', { name: '重置筛选', exact: true }).click();
   await page.getByRole('tab', { name: /我参与的/ }).click();
@@ -112,22 +137,13 @@ try {
   await expect(page.locator('.hall-count')).toHaveText('3');
   expect(Math.abs((await page.evaluate(() => scrollY)) - beforeScroll)).toBeLessThan(5);
   await expect(cards.first()).toContainText('待确认');
-  // Deterministic route fixtures exercise known-distance sorting without pretending a provider is connected.
-  server.context.domain.adapters.route = ({ task }) =>
-    routes.get(task.id) || { distance: null, minutes: null };
-  await applyFilter('sort', 'sort', 'distance');
-  await expect(cards.nth(1)).toContainText('居家清洁整理');
-  await applyFilter('distance', 'distance', '3');
-  await expect(cards).toHaveCount(2);
-  await page.getByRole('button', { name: '重置', exact: true }).click();
-  await applyFilter('sort', 'sort', 'start');
   await expect(cards.nth(1)).toContainText('陪诊协助');
   await page.setViewportSize({ width: 470, height: 836 });
   await page.evaluate(() => scrollTo(0, 0));
-  await page.screenshot({ path: 'tmp/ui-checks/hall-route-fixture.png' });
+  await page.screenshot({ path: 'tmp/ui-checks/hall-start-order.png' });
   expect(errors).toEqual([]);
   console.log(
-    '服务大厅通过：4种视口、图片字体加载、搜索、取消/重置筛选、类型/日期/时长/距离、空状态、参与分组、报名后更新、详情返回滚动、已知距离与时间排序、隐私检查。',
+    '服务大厅通过：4种视口、图片字体加载、搜索、取消/重置筛选、类型/日期/时长、空状态、参与分组、报名后更新、详情返回滚动、开始时间排序、隐私检查。',
   );
 } finally {
   await browser.close();

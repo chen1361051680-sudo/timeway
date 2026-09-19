@@ -1,6 +1,6 @@
-import { esc, icon, btn, empty, hours, status, labels, select, field, dateTime } from './ui.js';
+import { esc, icon, btn, empty, hours, labels, select, field, dateTime } from './ui.js';
+import { offerImage, isGoods, isUnscheduledGoods } from './redeem.js';
 
-const artwork = { 陪伴交流: 'companion', 陪诊协助: 'medical', 生活协助: 'housework', 出行陪同: 'walk' };
 export const bankDate = (value) => new Date(value).toLocaleDateString('en-CA', { timeZone: 'Asia/Shanghai' });
 const clockTime = (value) =>
   new Date(value).toLocaleTimeString('zh-CN', {
@@ -28,14 +28,13 @@ export function bankOffers(offers, f) {
   return offers
     .filter(
       (t) =>
+        isGoods(t) &&
         (!f.org || t.owner === f.org) &&
-        (!f.date || bankDate(t.start) === f.date) &&
         (!f.minutes || t.minutes <= Number(f.minutes)),
     )
     .sort((a, b) => {
-      if (f.sort === 'minutes') return a.minutes - b.minutes || a.start.localeCompare(b.start);
-      if (f.sort === 'remaining') return b.remaining - a.remaining || a.start.localeCompare(b.start);
-      return a.start.localeCompare(b.start);
+      if (f.sort === 'minutes') return a.minutes - b.minutes || b.created.localeCompare(a.created);
+      return b.created.localeCompare(a.created);
     });
 }
 function filterButton(label, id, symbol, active = false) {
@@ -49,29 +48,31 @@ function filterButton(label, id, symbol, active = false) {
 }
 export function bankCard(t, account) {
   const unavailable =
-    t.remaining <= 0
-      ? '名额已满'
+    t.remaining !== null && t.remaining <= 0
+      ? isGoods(t) ? '已兑完' : '名额已满'
       : t.hasPendingChange
         ? '安排调整中'
-        : Date.parse(t.deadline) <= Date.now()
+        : !isUnscheduledGoods(t) && Date.parse(t.deadline) <= Date.now()
           ? '预约已截止'
           : '';
   const insufficient = !unavailable && (account?.available || 0) < t.minutes;
   return `<a class="bank-service-card" href="#task/${esc(t.id)}" aria-label="${esc(t.title)}，查看详情">
-    <img class="bank-service-image" src="/images/hall-${artwork[t.category] || 'companion'}.webp" alt="" width="1024" height="1024" loading="lazy">
+    ${offerImage(t, 'bank-service-image')}
     <div class="bank-service-content">
       <div class="bank-service-heading"><h3>${esc(t.title)}</h3><span class="bank-cost">需要 <strong>${hours(t.minutes)}</strong> 小时</span></div>
       <p class="bank-service-org">${icon('home')}<span>${esc(t.orgName)}</span></p>
-      <p class="bank-service-location">${icon('pin')}<span>${esc(t.region)}</span></p>
-      <p class="bank-service-description">${esc(t.description)}</p>
-      <div class="bank-service-bottom"><div class="bank-service-chips"><span>${icon('calendar')}${esc(dayLabel(t.start))}</span><span>${icon('clock')}${clockTime(t.start)}–${clockTime(t.end)}</span><span class="bank-remaining">${unavailable || `剩余 <b>${t.remaining}</b> 名`}</span></div><span class="bank-detail">查看详情</span></div>
-      ${insufficient ? '<p class="bank-service-warning">该机构可用时间不足，可查看服务要求</p>' : ''}
+      <p class="bank-service-location">${icon('gift')}<span>${esc(t.itemName || t.title)}</span></p>
+      <p class="bank-service-description">${esc(isGoods(t) ? t.specification : t.description)}</p>
+      <div class="bank-service-bottom"><div class="bank-service-chips"><span class="bank-remaining">${unavailable || '可兑换'}</span></div><span class="bank-detail">查看详情</span></div>
+      ${insufficient ? '<p class="bank-service-warning">该机构可用时间不足</p>' : ''}
     </div>
   </a>`;
 }
 function bookingTile(b) {
   const hint =
-    b.status === 'reschedule'
+    b.redemptionMode === 'instant'
+      ? '请等待工作人员联系你'
+      : b.status === 'reschedule'
       ? '预约时间有调整，请查看改约安排'
       : b.status === 'disputed'
         ? '服务结果存在异议，等待双方处理'
@@ -80,28 +81,26 @@ function bookingTile(b) {
           : b.extra
             ? '追加服务待确认'
             : '';
-  return `<a href="#booking/${esc(b.id)}" class="bank-booking-card"><div class="between"><h3>${esc(b.title)}</h3>${status(b.status)}</div><p>${icon('home')}${esc(b.orgName)}</p><p>${icon('calendar')}${esc(dayLabel(b.start))} ${clockTime(b.start)}–${clockTime(b.end)}</p><div class="between"><span>${b.status === 'completed' ? `已使用 ${hours(b.charged)} 小时` : ['cancelled', 'rejected'].includes(b.status) ? '时间占用已释放' : `占用 ${hours(b.held)} 小时`}</span><span class="bank-booking-detail">查看安排 ${icon('arrow')}</span></div>${hint ? `<p class="bank-booking-hint">${hint}</p>` : ''}</a>`;
+  return `<a href="#booking/${esc(b.id)}" class="bank-booking-card"><div class="bank-booking-item">${b.coverId ? offerImage(b, 'bank-booking-image') : ''}<div class="bank-booking-content"><h3>${esc(b.title)}</h3><p>${icon('home')}${esc(b.orgName)}</p><p>${icon('calendar')}${isUnscheduledGoods(b) ? `兑换于 ${dateTime(b.created)}` : `${esc(dayLabel(b.start))} ${clockTime(b.start)}–${clockTime(b.end)}`}</p></div></div><div class="between"><span>${b.status === 'completed' ? `扣除时长 ${hours(b.charged)} 小时` : ['cancelled', 'rejected'].includes(b.status) ? '时间占用已释放' : `占用 ${hours(b.held)} 小时`}</span><span class="bank-booking-detail">查看详情 ${icon('arrow')}</span></div>${hint ? `<p class="bank-booking-hint">${hint}</p>` : ''}</a>`;
 }
-export function bankContent({ bank, offers, filter: f, tab, bookingStatus }) {
+export function bankContent({ bank, offers, filter: f, tab }) {
   const a = bankAccount(bank.accounts, f.org);
   const orgName = bank.accounts.find((a) => a.orgId === f.org)?.orgName || '全部机构';
   const shown = bankOffers(offers, f);
-  const bookings = bank.bookings.filter(
-    (b) => (!f.org || b.owner === f.org) && (!bookingStatus || b.status === bookingStatus),
-  );
-  const filtered = f.date || f.minutes || f.sort;
+  const bookings = bank.bookings.filter((b) => !f.org || b.owner === f.org);
+  const filtered = f.minutes || f.sort;
   return `<header class="bank-header"><h1>时间银行</h1><p>记录每一份付出 让温暖在时间里延续</p></header>
     <section class="bank-account-card" aria-label="时间账户">
       <div class="bank-account-top"><span class="bank-org-emblem"><svg viewBox="0 0 48 48" aria-hidden="true"><path fill="#f28b48" d="M4 21 21 6q3-3 6 0l17 15q2 3-2 4h-3v16H9V25H6q-4-1-2-4Z"/><path d="M20 23c-3 0-4 3-4 6s3 4 5 2 2-7-1-8Zm-2-5v1m4-2v2m7 6c3 0 4 3 3 6s-4 4-5 1-1-6 2-7Zm-1-5v1m4 0v2" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/></svg></span>${btn(`<span class="bank-org-name">${esc(orgName)}${icon('chevron')}</span><small>切换机构查看时间账户</small>`, 'bank-filter', 'org', 'bank-org-switch', 'aria-label="切换机构查看时间账户" aria-haspopup="dialog"')}${btn(`${bankIcon('ledger')}<span>收支明细</span>${icon('arrow')}`, 'bank-ledger', '', 'bank-ledger-button', 'aria-haspopup="dialog"')}</div>
       <div class="bank-account-inner"><div class="bank-metrics">
         ${btn(`<span>可用时间 ${bankIcon('question')}</span><strong>${hours(a.available)}<small>小时</small></strong>`, 'bank-account-info', '', 'bank-available', 'aria-label="可用时间及累计贡献说明"')}
         ${metric('待确认', a.pending, 'clock', 'pending')}${metric('兑换占用', a.held, 'hourglass', 'hold')}${metric('已使用', a.used, 'checked', 'redeem')}
-      </div><p class="bank-account-note">${icon('info')}<span>时间权益仅可用于兑换${f.org ? '本' : '对应'}机构提供的公益服务，不能转让或提现。</span></p>${a.debt || a.disputed ? `<p class="bank-account-alert">${a.disputed ? `异议冻结 ${hours(a.disputed)} 小时。` : ''}${a.debt ? `更正后待补足 ${hours(a.debt)} 小时，暂不可新增兑换。` : ''}</p>` : ''}</div>
+      </div><p class="bank-account-note">${icon('info')}<span>时间权益仅可用于兑换${f.org ? '本' : '对应'}机构提供的物品，不能转让或提现。</span></p>${a.debt || a.disputed ? `<p class="bank-account-alert">${a.disputed ? `异议冻结 ${hours(a.disputed)} 小时。` : ''}${a.debt ? `更正后待补足 ${hours(a.debt)} 小时，暂不可新增兑换。` : ''}</p>` : ''}</div>
     </section>
-    <section class="bank-services" aria-label="时间兑换"><div class="bank-tabs" role="tablist" aria-label="时间银行列表">${btn('可兑换服务', 'bank-tab', 'offers', `bank-tab${tab === 'offers' ? ' active' : ''}`, `role="tab" aria-selected="${tab === 'offers'}"`)}${btn('我的兑换', 'bank-tab', 'bookings', `bank-tab${tab === 'bookings' ? ' active' : ''}`, `role="tab" aria-selected="${tab === 'bookings'}"`)}</div>
+    <section class="bank-services" aria-label="时间兑换"><div class="bank-tabs" role="tablist" aria-label="时间银行列表">${btn('可兑换物品', 'bank-tab', 'offers', `bank-tab${tab === 'offers' ? ' active' : ''}`, `role="tab" aria-selected="${tab === 'offers'}"`)}${btn('我的兑换', 'bank-tab', 'bookings', `bank-tab${tab === 'bookings' ? ' active' : ''}`, `role="tab" aria-selected="${tab === 'bookings'}"`)}</div>
     ${
       tab === 'offers'
-        ? `<div class="bank-filters" aria-label="兑换服务筛选">${filterButton(f.date ? f.date.slice(5).replace('-', '/') : '预约日期', 'date', 'calendar', !!f.date)}${filterButton(f.minutes ? `${hours(f.minutes)}小时内` : '所需时长', 'minutes', 'clock', !!f.minutes)}${filterButton({ minutes: '时长优先', remaining: '名额优先', start: '时间优先' }[f.sort] || '默认排序', 'sort', 'sort', !!f.sort)}</div>${filtered ? `<div class="bank-filter-summary"><span>${f.org ? esc(orgName) + ' · ' : ''}找到 ${shown.length} 项服务</span>${btn('重置筛选', 'bank-reset', '', 'text-button')}</div>` : ''}<div class="bank-service-list">${
+        ? `<div class="bank-filters" aria-label="兑换物品筛选">${filterButton(f.minutes ? `${hours(f.minutes)}小时内` : '所需时长', 'minutes', 'clock', !!f.minutes)}${filterButton(f.sort === 'minutes' ? '时长优先' : '最新发布', 'sort', 'sort', !!f.sort)}</div>${filtered ? `<div class="bank-filter-summary"><span>${f.org ? esc(orgName) + ' · ' : ''}找到 ${shown.length} 件物品</span>${btn('重置筛选', 'bank-reset', '', 'text-button')}</div>` : ''}<div class="bank-service-list">${
             shown.length
               ? shown
                   .map((t) =>
@@ -111,9 +110,9 @@ export function bankContent({ bank, offers, filter: f, tab, bookingStatus }) {
                     ),
                   )
                   .join('')
-              : `<div class="bank-empty">${empty('暂无可兑换服务', filtered ? '试试调整机构、预约日期或所需时长。' : '机构发布可预约服务后，会在这里与你相遇。')}${btn('调整筛选', 'bank-filter', 'org', 'secondary')}${filtered ? btn('重置筛选', 'bank-reset', '', 'text-button') : ''}</div>`
+              : `<div class="bank-empty">${empty('暂无可兑换物品', filtered ? '试试调整机构或所需时长。' : '机构发布的兑换物品会在这里展示。')}${btn('调整筛选', 'bank-filter', 'org', 'secondary')}${filtered ? btn('重置筛选', 'bank-reset', '', 'text-button') : ''}</div>`
           }</div>`
-        : `<div class="bank-booking-statuses" aria-label="兑换状态">${[['', '全部'], ...['pending', 'accepted', 'result_pending', 'completed', 'cancelled', 'reschedule', 'disputed', 'rejected'].map((s) => [s, s === 'result_pending' ? '待结果确认' : labels[s]])].map(([s, label]) => btn(label, 'bank-booking-status', s, `bank-booking-status${(bookingStatus || '') === s ? ' active' : ''}`, `aria-pressed="${(bookingStatus || '') === s}"`)).join('')}</div><div class="bank-bookings">${bookings.length ? bookings.map(bookingTile).join('') : `<div class="bank-empty">${empty('暂无兑换记录', '选择合适的服务，让积累的时间带来一份帮助。')}${btn('看看可兑换服务', 'bank-tab', 'offers', 'secondary')}</div>`}</div>`
+        : `<div class="bank-bookings">${bookings.length ? bookings.map(bookingTile).join('') : `<div class="bank-empty">${empty('暂无兑换记录', '选择需要的物品，使用积累的时间权益。')}${btn('看看可兑换物品', 'bank-tab', 'offers', 'secondary')}</div>`}</div>`
     }
     </section>`;
 }

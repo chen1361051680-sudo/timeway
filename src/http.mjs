@@ -1,11 +1,10 @@
-import { randomUUID, createHash } from 'node:crypto';
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { createHash } from 'node:crypto';
 import { check, AppError, text } from './common.mjs';
 import { Store } from './store.mjs';
 import { Domain } from './domain.mjs';
 import { Auth } from './auth.mjs';
 import { externalAdapters } from './adapters.mjs';
+import { OfferCovers } from './offer-covers.mjs';
 export function services(options = {}) {
   const environment = options.environment || process.env.NODE_ENV || 'development';
   check(
@@ -29,15 +28,16 @@ export function services(options = {}) {
     smsUrl: process.env.SMS_WEBHOOK_URL,
     smsToken: process.env.SMS_WEBHOOK_TOKEN,
   });
+  const domain = new Domain(store, adapters);
   return {
     store,
-    domain: new Domain(store, adapters),
+    domain,
+    offerCovers: new OfferCovers(store, environment, options.offerCoverDirectory),
     auth: new Auth(store, environment, demoMode),
     adapters,
     environment,
     demoMode,
     origin: options.origin || process.env.PUBLIC_ORIGIN,
-    uploads: resolve(`./data/${databaseEnvironment}-uploads`),
   };
 }
 async function bodyOf(request) {
@@ -101,6 +101,19 @@ export async function api(request, response, url, ctx) {
   }
   if (path === '/api/profile' && method === 'PUT') return send(s.transaction(() => d.profile(user, body)));
   d.actor(user);
+  if (path === '/api/offer-covers' && method === 'POST') {
+    d.actor(user, 'requester');
+    return send(await ctx.offerCovers.save(user, body));
+  }
+  if (path.startsWith('/api/offer-covers/') && method === 'GET') {
+    const image = await ctx.offerCovers.read(user, path.slice('/api/offer-covers/'.length));
+    response.setHeader('Content-Type', 'image/webp');
+    response.setHeader('Cache-Control', 'private, no-cache');
+    return response.end(image);
+  }
+  // Retired endpoints must also reject cached idempotent responses from older clients.
+  if (/^\/api\/(comments|files|attachments)(\/|$)/.test(path))
+    throw new AppError(404, '该功能已移除');
   if (path === '/api/tasks' && method === 'GET')
     return send(d.tasks(user, Object.fromEntries(url.searchParams)));
   if (path === '/api/bank' && method === 'GET') return send(d.bank(user));
@@ -114,56 +127,12 @@ export async function api(request, response, url, ctx) {
   if ((m = path.match(/^\/api\/bookings\/([^/]+)$/)) && method === 'GET') {
     const b = s.get('booking', m[1]);
     check(b && [b.owner, b.userId].includes(user.id), '无权访问预约', 403);
-    return send({ ...d.bookingView(user, b), task: d.task(user, b.taskId) });
+    return send({ ...d.bookingView(user, b), task: d.taskView(user, s.get('task', b.taskId)) });
   }
-  if ((m = path.match(/^\/api\/comments\/([^/]+)$/)) && method === 'GET') return send(d.comments(user, m[1]));
   if ((m = path.match(/^\/api\/audit\/([^/]+)$/)) && method === 'GET') {
     const r = s.get('record', m[1]) || s.get('booking', m[1]) || s.get('task', m[1]);
     check(r && [r.owner, r.userId].includes(user.id), '无权访问', 403);
     return send(s.all('audit').filter((a) => a.ref === m[1]));
-  }
-  if (path === '/api/attachments' && method === 'POST') {
-    check(adapters.status.upload === 'local', 'COS 尚未接入，生产环境暂不开放附件上传', 503);
-    d.comments(user, body.ref);
-    check(
-      ['image/png', 'image/jpeg', 'image/webp', 'application/pdf'].includes(body.type),
-      '仅支持 PNG、JPEG、WebP 或 PDF',
-    );
-    const data = Buffer.from(text(body.base64, '附件', 4200000), 'base64');
-    check(data.length > 0 && data.length <= 3000000, '附件最大3MB');
-    const signatures = {
-      'image/png': data.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])),
-      'image/jpeg': data[0] === 255 && data[1] === 216 && data[2] === 255,
-      'image/webp': data.toString('ascii', 0, 4) === 'RIFF' && data.toString('ascii', 8, 12) === 'WEBP',
-      'application/pdf': data.toString('ascii', 0, 5) === '%PDF-',
-    };
-    check(signatures[body.type], '文件内容与类型不符');
-    await mkdir(ctx.uploads, { recursive: true });
-    const id = randomUUID();
-    await writeFile(resolve(ctx.uploads, id), data, { flag: 'wx', mode: 0o600 });
-    return send(
-      s.put('attachment', {
-        id,
-        owner: user.id,
-        ref: body.ref,
-        type: body.type,
-        name: text(body.name, '文件名', 100),
-      }),
-    );
-  }
-  if ((m = path.match(/^\/api\/attachments\/([^/]+)$/)) && method === 'GET') {
-    const a = s.get('attachment', m[1]);
-    check(a, '文件不存在', 404);
-    d.comments(user, a.ref);
-    const file = await readFile(resolve(ctx.uploads, a.id));
-    response.setHeader('Content-Type', a.type);
-    response.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(a.name)}`);
-    response.end(file);
-    return;
-  }
-  if ((m = path.match(/^\/api\/files\/([^/]+)$/)) && method === 'GET') {
-    d.comments(user, m[1]);
-    return send(s.all('attachment').filter((a) => a.ref === m[1]));
   }
   const fingerprint = createHash('sha256')
       .update(method + path + JSON.stringify(body))
@@ -173,6 +142,7 @@ export async function api(request, response, url, ctx) {
   const perform = () => {
     if (path === '/api/tasks' && method === 'POST') return d.createTask(user, body);
     if ((m = path.match(/^\/api\/tasks\/([^/]+)$/)) && method === 'PUT') return d.saveTask(user, m[1], body);
+    if ((m = path.match(/^\/api\/tasks\/([^/]+)$/)) && method === 'DELETE') return d.deleteOffer(user, m[1]);
     if ((m = path.match(/^\/api\/tasks\/([^/]+)\/action$/)) && method === 'POST')
       return d.taskAction(user, m[1], body);
     if ((m = path.match(/^\/api\/tasks\/([^/]+)\/apply$/)) && method === 'POST')
@@ -185,8 +155,6 @@ export async function api(request, response, url, ctx) {
       return d.recordAction(user, m[1], body);
     if ((m = path.match(/^\/api\/bookings\/([^/]+)$/)) && method === 'POST')
       return d.bookingAction(user, m[1], body);
-    if ((m = path.match(/^\/api\/comments\/([^/]+)$/)) && method === 'POST')
-      return d.comment(user, m[1], body);
     if ((m = path.match(/^\/api\/notices\/([^/]+)$/)) && method === 'POST') {
       const n = d.own('notice', m[1], user);
       n.read = true;

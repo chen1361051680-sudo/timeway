@@ -120,6 +120,61 @@ try {
   await page.locator('.baidu-pin.map-pin-need').click();
   await expect(page.getByRole('button', { name: '收起需求面板', exact: true })).toBeVisible();
   await expect(page.locator('.map-task-card')).toContainText('地图验证需求1');
+  const assertCentered = async () => {
+    await expect.poll(() => page.evaluate(async (id) => {
+      const m = (await import('/baidu-map.js')).baiduMap;
+      const canvas = m.host.getBoundingClientRect();
+      const scope = document.querySelector('.map-scope').getBoundingClientRect();
+      const sheet = document.querySelector('.map-sheet').getBoundingClientRect();
+      const pixel = m.map.pointToPixel(m.points.get(id));
+      const expectedY = (scope.bottom + 20 + sheet.top - 40) / 2 - canvas.top;
+      return Math.max(Math.abs(pixel.x - canvas.width / 2), Math.abs(pixel.y - expectedY));
+    }, nearbyNeed.id)).toBeLessThan(4);
+    const label = page.locator('.baidu-pin.is-selected .pin-label');
+    await expect(label).toBeVisible();
+    expect((await label.boundingBox()).y + (await label.boundingBox()).height)
+      .toBeLessThan((await page.locator('.map-sheet').boundingBox()).y);
+  };
+  await assertCentered();
+  for (const width of [320, 520]) {
+    await page.setViewportSize({ width, height: 844 });
+    await page.evaluate(async () => {
+      const m = (await import('/baidu-map.js')).baiduMap;
+      m.map.panBy(25, 20, { noAnimation: true });
+    });
+    await page.locator('.baidu-pin.map-pin-need').click();
+    await assertCentered();
+  }
+  await page.screenshot({ path: 'tmp/baidu-checks/selected-centered.png' });
+  const beforeClear = await page.evaluate(async () => {
+    const m = (await import('/baidu-map.js')).baiduMap.map;
+    return { lng: m.getCenter().lng, lat: m.getCenter().lat, zoom: m.getZoom() };
+  });
+  const blank = await page.evaluate(() => {
+    const canvas = document.querySelector('.baidu-map-canvas').getBoundingClientRect();
+    const top = document.querySelector('.map-scope').getBoundingClientRect().bottom;
+    const bottom = document.querySelector('.map-sheet').getBoundingClientRect().top;
+    return { x: canvas.left + 16, y: (top + bottom) / 2 };
+  });
+  await page.mouse.click(blank.x, blank.y);
+  await expect(page.locator('.baidu-pin.is-selected')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /取消选中/ })).toHaveCount(0);
+  expect(await page.evaluate(async () => {
+    const m = (await import('/baidu-map.js')).baiduMap.map;
+    return { lng: m.getCenter().lng, lat: m.getCenter().lat, zoom: m.getZoom() };
+  })).toEqual(beforeClear);
+  await page.locator('.baidu-pin.map-pin-need').click();
+  await expect(page.locator('.baidu-pin.map-pin-need')).toHaveAttribute('aria-pressed', 'true');
+  await assertCentered();
+  await page.touchscreen.tap(blank.x, blank.y);
+  await expect(page.locator('.baidu-pin.is-selected')).toHaveCount(0);
+  await page.locator('.baidu-pin.map-pin-need').click();
+  await assertCentered();
+  await page.mouse.move(blank.x, blank.y);
+  await page.mouse.down();
+  await page.mouse.move(blank.x + 30, blank.y + 15, { steps: 6 });
+  await page.mouse.up();
+  await expect(page.locator('.baidu-pin.map-pin-need')).toHaveAttribute('aria-pressed', 'true');
 
   await page.getByRole('button', { name: '搜索地点、社区服务', exact: true }).click();
   await page.getByLabel('地点、需求或机构关键词').fill('杭州西湖');

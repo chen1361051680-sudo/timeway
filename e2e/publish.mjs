@@ -131,37 +131,99 @@ const visit = async (kind = 'help') => {
 const field = (name) => page.locator(`#publish-form [name="${name}"]`);
 try {
   await visit();
+  await expect(page.locator('.pub-actions button')).toHaveCount(1);
+  await expect(page.getByRole('button', { name: '保存草稿' })).toHaveCount(0);
   await expect(field('phone')).toHaveValue('13912345678');
   await expect(field('start')).toHaveValue(/T09:00$/);
+  await expect(page.locator('.pub-start-row > span')).toBeVisible();
+  expect((await field('start').boundingBox()).width).toBeGreaterThan(190);
+  expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBeLessThan(950);
+  await expect(page.locator('.pub-card')).toHaveCount(2);
+  await expect(page.locator('.pub-more, .pub-required-hint')).toHaveCount(0);
+  await expect(page.locator('#pub-deadline-text')).toContainText('开始时截止');
+  await expect(page.locator('#pub-contact-text')).toContainText('13912345678');
+  await page.screenshot({ path: 'tmp/ui-checks/publish-stream-initial-390.png', fullPage: true });
   await page.getByRole('button', { name: '预览并发布', exact: true }).click();
   await expect(field('title')).toHaveAttribute('aria-invalid', 'true');
+  await expect(page.locator('.pub-subject .pub-field-error')).toBeVisible();
   await expect(page.locator('#dialog')).not.toBeVisible();
   await field('title').fill('陪伴聊天');
   await field('description').fill('测试服务内容');
   await page.getByRole('button', { name: '预览并发布', exact: true }).click();
   await expect(page.locator('.pub-preview-card')).toBeVisible();
   await page.getByRole('button', { name: '返回继续编辑', exact: true }).click();
-  await expect(page.locator('.pub-more')).not.toHaveAttribute('open', '');
+  await expect(page.locator('.pub-inline-setting[open]')).toHaveCount(0);
+  await page.locator('.pub-contact-details > summary').click();
+  await field('phone').fill('12');
+  await page.locator('.pub-contact-details > summary').click();
+  await page.getByRole('button', { name: '预览并发布', exact: true }).click();
+  await expect(field('phone')).toBeVisible();
+  await expect(field('phone')).toBeFocused();
+  await expect(field('phone')).toHaveAttribute('aria-invalid', 'true');
+  await field('phone').fill('13912345678');
+  await expect(field('phone')).not.toHaveAttribute('aria-invalid', 'true');
+  await page.locator('.pub-contact-details > summary').click();
+  await expect(page.locator('#pub-contact-text')).toContainText('13912345678');
   expect(
     await page
       .locator('#publish-form input:visible, #publish-form textarea:visible, #publish-form select:visible')
       .count(),
   ).toBe(6);
-  await page.locator('.pub-more > summary').click();
-  await field('recipient').fill('私人受助对象');
-  await page.locator('[data-action=pub-duration][data-id="120"]').click();
+  await field('scheduleMinutes').selectOption('custom');
+  await expect(field('scheduleMinutes').locator('option:checked')).toHaveText('其他时长');
+  await expect(field('scheduleHours')).toBeFocused();
+  await expect(page.locator('.pub-inline-setting[open]')).toHaveCount(0);
+  await field('scheduleHours').fill('0');
+  await field('scheduleExtraMinutes').fill('45');
+  await expect(field('end')).toHaveValue(/T09:45$/);
+  await field('scheduleExtraMinutes').fill('0');
+  await page.getByRole('button', { name: '预览并发布', exact: true }).click();
+  await expect(field('scheduleHours')).toHaveAttribute('aria-invalid', 'true');
+  await expect(page.locator('#dialog')).not.toBeVisible();
+  await field('scheduleHours').fill('2');
+  await field('scheduleExtraMinutes').fill('60');
+  await page.getByRole('button', { name: '预览并发布', exact: true }).click();
+  await expect(field('scheduleExtraMinutes')).toHaveAttribute('aria-invalid', 'true');
+  await field('scheduleHours').fill('24');
+  await field('scheduleExtraMinutes').fill('1');
+  await page.getByRole('button', { name: '预览并发布', exact: true }).click();
+  await expect(field('scheduleHours')).toHaveAttribute('aria-invalid', 'true');
+  await field('scheduleHours').fill('2');
+  await field('scheduleExtraMinutes').fill('20');
+  await expect(field('end')).toHaveValue(/T11:20$/);
+  await page.getByRole('button', { name: '预览并发布', exact: true }).click();
+  await expect(page.locator('.pub-preview-card')).toBeVisible();
+  await page.getByRole('button', { name: '返回继续编辑', exact: true }).click();
+  await expect(field('scheduleMinutes')).toHaveValue('custom');
+  await expect(field('scheduleExtraMinutes')).toHaveValue('20');
+  await field('scheduleMinutes').selectOption('120');
+  await expect(page.locator('.pub-custom-duration')).not.toBeVisible();
+  await page.locator('.pub-deadline-details > summary').click();
+  await expect(field('recipient')).toHaveCount(0);
+  await expect(field('meeting')).toHaveCount(0);
+  await expect(field('restMinutes')).toHaveCount(0);
+  await expect(field('recipients')).toHaveCount(0);
+  await expect(field('requirements')).toHaveCount(0);
+  await expect(page.locator('.pub-inline-setting')).toHaveCount(2);
+  await expect(field('end')).toHaveAttribute('type', 'hidden');
+  await expect(field('deadline')).not.toBeVisible();
   await expect(field('end')).toHaveValue(/T11:00$/);
-  await field('restMinutes').fill('30');
-  await expect(page.locator('#pub-duration-text')).toHaveText('1.5 小时');
+  await expect(page.locator('#pub-duration-text')).toHaveText('2 小时');
   const start = await field('start').inputValue();
   await field('start').fill(start.replace('T09:00', 'T10:00'));
   await expect(field('end')).toHaveValue(/T12:00$/);
   await expect(field('deadline')).toHaveValue(/T10:00$/);
-  await field('end').fill(start.replace('T09:00', 'T09:30'));
+  await expect(page.locator('#pub-deadline-text')).toContainText('10:00');
+  await field('deadlinePreset').selectOption('custom');
+  await expect(field('deadline')).toBeVisible();
+  await field('deadline').fill(start.replace('T09:00', 'T10:30'));
+  await page.locator('.pub-deadline-details > summary').click();
   await page.getByRole('button', { name: '预览并发布', exact: true }).click();
-  await expect(field('end')).toHaveAttribute('aria-invalid', 'true');
-  await page.locator('[data-action=pub-duration][data-id="120"]').click();
-  await expect(field('end')).not.toHaveAttribute('aria-invalid', 'true');
+  await expect(field('deadline')).toHaveAttribute('aria-invalid', 'true');
+  await expect(field('deadline')).toBeVisible();
+  await expect(field('deadline')).toBeFocused();
+  await field('deadlinePreset').selectOption('0');
+  await expect(field('deadline')).toHaveValue(/T10:00$/);
   await page.locator('[data-action=pub-place]').click();
   await expect(page.locator('#place-picker')).toBeVisible();
   await page.getByRole('textbox', { name: '搜索服务地点', exact: true }).fill('无匹配');
@@ -198,7 +260,7 @@ try {
   await page.locator('[data-pick=confirm]').click();
   await expect(field('place')).toHaveValue(/120.18/);
   await expect(field('region')).toHaveValue('杭州市 · 西湖区');
-  await page.locator('.pub-more > summary').click();
+  await page.locator('.pub-deadline-details > summary').click();
   for (const width of [320, 390, 470, 1440]) {
     await page.setViewportSize({ width, height: 844 });
     await page.evaluate(() => document.fonts.ready);
@@ -210,34 +272,77 @@ try {
   await page.getByRole('button', { name: '预览并发布', exact: true }).click();
   await expect(page.locator('.pub-preview-card')).toContainText('陪伴聊天');
   await expect(page.locator('.pub-preview-card')).not.toContainText('私人受助对象');
-  await expect(page.locator('.pub-preview-card')).not.toContainText('120.180');
+  await expect(page.locator('.pub-preview-card')).toContainText(await field('address').inputValue());
   await expect(page.locator('.pub-preview-card')).not.toContainText('13912345678');
   await page.getByRole('button', { name: '返回继续编辑', exact: true }).click();
   await expect(field('title')).toHaveValue('陪伴聊天');
   await page.getByRole('button', { name: '预览并发布', exact: true }).click();
-  let rejectOnce = true;
+  let attempts = 0,
+    releaseLostResponse;
+  const attemptKeys = [];
   await page.route('**/api/tasks', async (route) => {
-    if (route.request().method() === 'POST' && rejectOnce) {
-      rejectOnce = false;
+    if (route.request().method() !== 'POST') return route.continue();
+    expect(route.request().postDataJSON()).not.toHaveProperty('recipients');
+    expect(route.request().postDataJSON()).not.toHaveProperty('requirements');
+    attempts++;
+    attemptKeys.push(route.request().headers()['idempotency-key']);
+    if (attempts === 1) {
       await route.fulfill({
         status: 503,
         contentType: 'application/json',
         body: JSON.stringify({ error: '测试：暂时无法保存' }),
       });
+    } else if (attempts === 2) {
+      // The server saves successfully, but the browser never receives the response.
+      await route.fetch();
+      await new Promise((resolve) => {
+        releaseLostResponse = resolve;
+      });
+      await route.abort('failed');
     } else await route.continue();
   });
   await page.getByRole('button', { name: '确认发布', exact: true }).click();
   await expect(page.locator('#modal-form .form-error')).toContainText('暂时无法保存');
   await page.getByRole('button', { name: '确认发布', exact: true }).click();
+  await expect.poll(() => !!releaseLostResponse).toBe(true);
+  await expect(field('title')).toBeDisabled();
+  await expect(page.locator('#modal-form button[type=submit]')).toHaveText('正在保存…');
+  await page.evaluate(() => {
+    for (let i = 0; i < 20; i++) {
+      document.querySelector('#modal-form').requestSubmit();
+      document.querySelector('#publish-form').requestSubmit();
+    }
+  });
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#dialog')).toBeVisible();
+  await page.evaluate(() => {
+    location.hash = '#profile';
+  });
+  await expect(page).toHaveURL(/#publish\/help$/);
+  expect(attempts).toBe(2);
+  expect(s.all('task')).toHaveLength(1);
+  releaseLostResponse();
+  await expect(page.locator('#modal-form .form-error')).toContainText('内容已保留');
+  await expect(field('title')).toBeEnabled();
+  await page.getByRole('button', { name: '确认发布', exact: true }).click();
+  await expect(page).toHaveURL(/#services$/);
+  await page.locator('.requester-card').first().click();
   await expect(page).toHaveURL(/#task\//);
-  const id = page.url().split('#task/')[1];
+  expect(attempts).toBe(3);
+  expect(new Set(attemptKeys).size).toBe(1);
+  const id = page.url().split('#task/')[1].split('/')[0];
   expect(s.all('task')).toHaveLength(1);
   expect(s.get('task', id).place.lng).toBe(120.18);
-  expect(s.get('task', id).minutes).toBe(90);
+  expect(s.get('task', id).minutes).toBe(120);
+  // Legacy private notes and credited duration must survive an unrelated edit.
+  s.put('task', { ...s.get('task', id), recipient: '私人受助对象', meeting: '旧集合说明', minutes: 90, recipients: 3, requirements: '既有服务约定' });
   await page.getByRole('link', { name: '编辑内容', exact: true }).click();
   await expect(field('place')).toHaveValue(/120.18/);
-  await expect(field('recipient')).toHaveValue('私人受助对象');
-  await expect(field('restMinutes')).toHaveValue('30');
+  await expect(field('recipient')).toHaveCount(0);
+  await expect(field('recipients')).toHaveCount(0);
+  await expect(field('requirements')).toHaveCount(0);
+  await expect(field('restMinutes')).toHaveCount(0);
+  await expect(page.locator('#pub-duration-text')).toHaveText('1.5 小时');
   await page.locator('.pub-address-details > summary').click();
   await field('address').fill('改为手动地址');
   await expect(field('place')).toHaveValue('');
@@ -247,15 +352,53 @@ try {
   await page.getByRole('button', { name: '确认保存修改', exact: true }).click();
   await expect(page).toHaveURL(/#task\//);
   expect(s.get('task', id).place).toBeUndefined();
+  expect(s.get('task', id).recipient).toBe('私人受助对象');
+  expect(s.get('task', id).meeting).toBe('旧集合说明');
+  expect(s.get('task', id).recipients).toBe(3);
+  expect(s.get('task', id).requirements).toBe('既有服务约定');
+  expect(s.get('task', id).minutes).toBe(90);
   expect(s.get('task', id).cell).toBeNull();
   await visit();
-  await field('title').fill('未完成草稿');
-  await page.getByRole('button', { name: '保存草稿', exact: true }).click();
+  await field('title').fill('超时重试需求');
+  await field('description').fill('陪长者聊天，协助阅读报纸。');
+  await field('scheduleMinutes').selectOption('custom');
+  await field('scheduleHours').fill('0');
+  await field('scheduleExtraMinutes').fill('45');
+  await page.getByRole('button', { name: '预览并发布', exact: true }).click();
+  await page.unroute('**/api/tasks');
+  await page.clock.install();
+  let delayedRoute;
+  const retryKeys = [];
+  await page.route('**/api/tasks', async (route) => {
+    if (route.request().method() !== 'POST') return route.continue();
+    retryKeys.push(route.request().headers()['idempotency-key']);
+    if (retryKeys.length === 1) delayedRoute = route;
+    else await route.continue();
+  });
+  await page.getByRole('button', { name: '确认发布', exact: true }).click();
+  await expect.poll(() => !!delayedRoute).toBe(true);
+  await expect(page.locator('.pub-submit-status')).toHaveText('正在保存，请稍候…');
+  await page.clock.fastForward(15001);
+  await expect(page.locator('#modal-form .form-error')).toContainText('连接较慢');
+  await expect(field('title')).toHaveValue('超时重试需求');
+  await expect(field('title')).toBeEnabled();
+  await delayedRoute.abort().catch(() => {});
+  await page.getByRole('button', { name: '确认发布', exact: true }).click();
+  await expect(page).toHaveURL(/#services$/);
+  await expect(page.locator('.requester-card').first()).toContainText('超时重试需求');
+  await page.locator('.requester-card').first().click();
   await expect(page).toHaveURL(/#task\//);
-  const draftId = page.url().split('#task/')[1];
-  expect(s.get('task', draftId).status).toBe('draft');
+  expect(retryKeys).toHaveLength(2);
+  expect(new Set(retryKeys).size).toBe(1);
+  await page.unroute('**/api/tasks');
+  const retryId = page.url().split('#task/')[1].split('/')[0];
+  expect(s.get('task', retryId).status).toBe('published');
   await page.getByRole('link', { name: '编辑内容', exact: true }).click();
-  await expect(field('title')).toHaveValue('未完成草稿');
+  await expect(field('title')).toHaveValue('超时重试需求');
+  await expect(field('scheduleMinutes')).toHaveValue('custom');
+  await expect(field('scheduleHours')).toHaveValue('0');
+  await expect(field('scheduleExtraMinutes')).toHaveValue('45');
+  expect(s.get('task', retryId).minutes).toBe(45);
   await visit('redeem');
   await field('title').fill('社区兑换');
   await field('description').fill('机构提供服务');
@@ -290,7 +433,7 @@ try {
   await page.screenshot({ path: 'tmp/ui-checks/publish-large.png', fullPage: true });
   expect(errors).toEqual([]);
   console.log(
-    '发布优化通过：时间联动、校验、选址搜索/拒绝定位/选点竞态/取消回填、预览隐私、失败重试、保存编辑、手动地址、草稿、兑换、四种宽度和大字模式。',
+    '发布优化通过：紧凑布局、时间联动与自定义、选址、预览隐私、20 次连续提交拦截、响应丢失重试不重复、超时恢复、保存编辑、兑换、四种宽度和大字模式。',
   );
 } finally {
   await browser.close();

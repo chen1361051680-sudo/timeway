@@ -89,7 +89,7 @@ try {
   await expect(vol.locator('.map-pin-love')).toHaveCount(3);
   await expect(vol.locator('.map-pin-need')).toHaveCount(5);
   await expect(vol.locator('.map-stat strong')).toHaveText(['3', '3', '3']);
-  await expect(vol.locator('.map-task-card')).not.toContainText('私人门牌');
+  await expect(vol.locator('#map-action')).not.toContainText('私人门牌');
   for (const [width, height] of [
     [320, 680],
     [390, 760],
@@ -119,7 +119,8 @@ try {
   await vol.screenshot({ path: 'tmp/map-checks/sheet-collapsed.png' });
   await dragHandle(-230);
   await expect(vol.locator('.map-sheet')).toHaveAttribute('data-snap', 'expanded');
-  await expect(vol.locator('.map-additional-needs .map-nearby-item')).toHaveCount(4);
+  await expect(vol.locator('.map-additional-needs .map-task-card')).toHaveCount(2);
+  await expect(vol.locator('#map-action .map-task-card')).toHaveCount(3);
   const scroll = vol.locator('.map-sheet-scroll');
   await scroll.hover();
   await vol.mouse.wheel(0, 300);
@@ -189,7 +190,7 @@ try {
   await expect(vol.locator('.map-task-heading h3')).toHaveText('公园散步');
   await vol.locator('.map-task-cta').click();
   await expect(vol).toHaveURL(new RegExp('#task/' + needs[4].id));
-  await vol.getByRole('button', { name: '在爱心地图查看', exact: true }).click();
+  await vol.getByRole('button', { name: '返回', exact: true }).click();
   await expect(vol.locator('.map-task-heading h3')).toHaveText('公园散步');
   await vol.getByRole('button', { name: '回到当前位置', exact: true }).click();
   await expect(vol.getByRole('dialog')).toContainText('手动选择');
@@ -210,7 +211,7 @@ try {
   await shot(orgPage, 'requester');
   d.applicationAction(org, application.id, { action: 'accept' });
   await vol.goto(base + '/#map');
-  await vol.getByRole('button', { name: '取消选中' }).click();
+  await vol.getByRole('tab', { name: '大家的爱心', exact: true }).click();
   await expect(vol.locator('.map-task-heading h3')).toHaveText('陪诊协助');
   await expect(vol.locator('.map-task-cta')).toHaveText('查看服务安排');
   expect(errors).toEqual([]);

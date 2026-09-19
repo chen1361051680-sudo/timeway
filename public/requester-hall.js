@@ -10,12 +10,8 @@ const categories = {
   上门探访: 'walk',
 };
 const filters = [
-  ['', '全部'],
-  ['draft', '草稿'],
-  ['recruiting', '招募中'],
-  ['active', '进行中'],
-  ['completed', '已完成'],
-  ['cancelled', '已取消'],
+  ['', '当前需求'],
+  ['history', '历史记录'],
 ];
 const groups = [
   ['applications', '待处理报名', 'red', 'people'],
@@ -64,15 +60,6 @@ export function requesterStatus(t) {
       glyph: 'close',
       action: '查看详情',
       focus: 'arrangement',
-    };
-  if (t.status === 'draft')
-    return {
-      group: 'draft',
-      label: '草稿',
-      color: 'gray',
-      glyph: 'record',
-      action: '继续编辑',
-      focus: 'edit',
     };
   if (apps.some((a) => a.status === 'disputed'))
     return {
@@ -203,18 +190,6 @@ export function requesterTodos(tasks) {
           .at(-1),
         'disputes',
       );
-    const requests = apps.filter((a) => a.status === 'accepted' && a.changeRequest);
-    if (task.status !== 'cancelled' && requests.length)
-      add(
-        'other',
-        requests.length,
-        '志愿者申请调整服务时间，请尽快确认',
-        requests
-          .map((a) => a.changeRequest.created)
-          .sort()
-          .at(-1),
-        'changes',
-      );
     const withdrawals = apps.filter((a) => a.status === 'withdrawn' && a.wasAccepted && !a.withdrawalHandled);
     if (task.status !== 'cancelled' && withdrawals.length)
       add(
@@ -255,22 +230,13 @@ function taskHref(t, focus) {
 function publishedCard(t) {
   const s = requesterStatus(t);
   const confirmed = (t.applications || []).filter((a) => confirmedStates.includes(a.status)).length;
-  const note = {
-    applications: '管理报名信息',
-    arrangement: '服务安排及联系信息',
-    records: s.group === 'completed' ? '服务记录及评价' : '确认服务结果',
-    other: '处理服务变更与异议',
-    disputes: '处理服务结果异议',
-    edit: '继续完善并发布需求',
-  }[s.focus];
-  return `<a class="requester-card published-card" href="${taskHref(t, s.focus)}" aria-label="${esc(t.title || '未命名草稿')}，${s.action}">
-    ${picture(t)}<div class="requester-card-body"><h2>${esc(t.title || '未命名草稿')}</h2>
+  return `<a class="requester-card published-card" href="${taskHref(t, s.focus)}" aria-label="${esc(t.title || '未命名服务')}，${s.action}">
+    ${picture(t)}<div class="requester-card-body"><h2>${esc(t.title || '未命名服务')}</h2>
     <p class="requester-location">${requesterIcon('pin')}<span>${esc(t.region || t.orgName)}</span></p>
     <div class="requester-meta"><span>${icon('calendar')}${esc(requesterDate(t.start))}</span><span>${icon('clock')}${hours(t.minutes)}小时</span></div>
-    <p class="requester-confirmed">${requesterIcon('people')}<span>已确认 <strong>${confirmed}/${t.capacity}</strong></span></p>
-    <p class="requester-card-note">点击查看详情、${note}</p></div>
+    <div class="requester-card-footer"><p class="requester-confirmed">${requesterIcon('people')}<span>已确认 <strong>${confirmed}/${t.capacity}</strong></span></p>
+    <span class="requester-card-action${s.group === 'completed' ? ' outline' : ''}">${s.action}</span></div></div>
     <span class="requester-card-status">${badge(s.label, s.color, s.glyph)}${icon('arrow')}</span>
-    <span class="requester-card-action${s.group === 'completed' ? ' outline' : ''}">${s.action}</span>
   </a>`;
 }
 function todoCard(item) {
@@ -285,14 +251,17 @@ function todoCard(item) {
   </a>`;
 }
 
-export function requesterHall({ tasks, todo = false, filter = '', todoFilter = '' }) {
+export function requesterHall({ tasks, todo = false, filter = '', todoFilter = '', latestTaskId = '' }) {
+  if (!filters.some(([id]) => id === filter)) filter = '';
+  const history = filter === 'history';
+  // Only change where a demand is listed; its service status and todo items stay intact.
+  const isHistory = (task) => task.displayStatus === 'ended' || requesterStatus(task).group === 'completed';
   const items = requesterTodos(tasks);
   const counts = Object.fromEntries(
     groups.map(([id]) => [id, items.filter((i) => i.type === id).reduce((sum, i) => sum + i.count, 0)]),
   );
   const count = Object.values(counts).reduce((sum, n) => sum + n, 0);
   const statusOrder = {
-    草稿: 0,
     招募中: 1,
     待服务: 2,
     服务中: 3,
@@ -302,24 +271,34 @@ export function requesterHall({ tasks, todo = false, filter = '', todoFilter = '
     已暂停: 5,
     已结束: 6,
     已完成: 7,
-    已取消: 8,
   };
   const list = todo
     ? items.filter((i) => !todoFilter || i.type === todoFilter)
     : tasks
-        .filter((t) => !filter || requesterStatus(t).group === filter)
-        .sort(
-          (a, b) =>
+        .filter((t) => t.status !== 'cancelled' && isHistory(t) === history)
+        .sort((a, b) => {
+          if (history) return String(b.end || b.start).localeCompare(String(a.end || a.start));
+          return (
+            Number(b.id === latestTaskId) - Number(a.id === latestTaskId) ||
             statusOrder[requesterStatus(a).label] - statusOrder[requesterStatus(b).label] ||
-            String(a.start).localeCompare(String(b.start)),
-        );
+            String(a.start).localeCompare(String(b.start))
+          );
+        });
+  const emptyTitle = todo ? '当前没有待处理事项' : history ? '暂无历史记录' : '暂无当前需求';
+  const emptyDescription = todo
+    ? '新的报名、服务记录与人员变更会在这里提醒你。'
+    : history
+      ? '已结束和已完成的需求会保留在这里。'
+      : tasks.some((t) => t.status !== 'cancelled' && isHistory(t))
+        ? '之前的需求可在历史记录中查看。'
+        : '点击右上方发布需求，让温暖从这里开始。';
   return `<header class="requester-hall-header"><h1>服务大厅</h1><p>发布身边的需要 让善意在社区相遇</p></header>
     <section class="requester-hall-sheet" aria-label="需求方服务大厅">
-      <div class="requester-tabs" role="tablist" aria-label="需求管理">
+      <div class="requester-toolbar"><div class="requester-tabs" role="tablist" aria-label="需求管理">
       ${btn('已发布需求', 'service-tab', 'discover', `requester-tab${todo ? '' : ' active'}`, `id="requester-published-tab" role="tab" aria-selected="${!todo}" aria-controls="requester-panel"`)}
       ${btn(`待办${count ? `<span class="requester-count">${count}</span>` : ''}`, 'service-tab', 'todo', `requester-tab${todo ? ' active' : ''}`, `id="requester-todo-tab" role="tab" aria-selected="${todo}" aria-controls="requester-panel"`)}
-      </div>
-      ${todo ? `<div class="requester-todo-stats" aria-label="待办分类">${groups.map(([id, label, color, glyph]) => btn(`<span class="requester-stat-icon ${color}">${requesterIcon(glyph)}</span><span class="requester-stat-copy"><span>${label}</span><strong class="${color}">${counts[id]}</strong></span>`, 'requester-todo-filter', id, `requester-stat${todoFilter === id ? ' selected' : ''}`, `aria-pressed="${todoFilter === id}" aria-label="${label} ${counts[id]}项"`)).join('')}</div>` : `${link(`${icon('plus')}发布需求`, 'publish/help', 'requester-publish')}<div class="requester-filters" aria-label="需求状态">${filters.map(([id, label]) => btn(label, 'requester-status', id, `requester-filter${filter === id ? ' active' : ''}`, `aria-pressed="${filter === id}"`)).join('')}</div>`}
-      <div id="requester-panel" class="requester-list" role="tabpanel" aria-labelledby="${todo ? 'requester-todo-tab' : 'requester-published-tab'}">${list.length ? list.map(todo ? todoCard : publishedCard).join('') : `<div class="requester-empty">${empty(todo ? '当前没有待处理事项' : filter ? '暂无该状态的需求' : '还没有发布需求', todo ? '新的报名、服务记录与人员变更会在这里提醒你。' : '发布一份帮扶需求，让温暖从这里开始。')}${todo ? btn('查看已发布需求', 'service-tab', 'discover', 'primary') : link('发布需求', 'publish/help', 'primary')}</div>`}</div>
+      </div>${link(`${icon('plus')}发布需求`, 'publish/help', 'requester-publish')}</div>
+      ${todo ? `<div class="requester-todo-stats" aria-label="待办分类">${groups.map(([id, label, color, glyph]) => btn(`<span class="requester-stat-icon ${color}">${requesterIcon(glyph)}</span><span class="requester-stat-copy"><span>${label}</span><strong class="${color}">${counts[id]}</strong></span>`, 'requester-todo-filter', id, `requester-stat${todoFilter === id ? ' selected' : ''}`, `aria-pressed="${todoFilter === id}" aria-label="${label} ${counts[id]}项"`)).join('')}</div>` : `<div class="requester-filters" aria-label="需求范围">${filters.map(([id, label]) => btn(label, 'requester-status', id, `requester-filter${filter === id ? ' active' : ''}`, `aria-pressed="${filter === id}"`)).join('')}</div>`}
+      <div id="requester-panel" class="requester-list" role="tabpanel" aria-labelledby="${todo ? 'requester-todo-tab' : 'requester-published-tab'}">${list.length ? list.map(todo ? todoCard : publishedCard).join('') : `<div class="requester-empty">${empty(emptyTitle, emptyDescription)}${todo ? btn('查看已发布需求', 'service-tab', 'discover', 'primary') : ''}</div>`}</div>
     </section>`;
 }

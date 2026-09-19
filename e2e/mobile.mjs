@@ -48,15 +48,15 @@ async function snapshot(p, name) {
 async function visit(p, hash) {
   await p.goto(base + '/#' + hash);
   await expect(p.locator('#app[aria-busy=true]')).toHaveCount(0);
+  await expect(p.locator('[data-action=comments], [data-action=files], .td-resources')).toHaveCount(0);
 }
 async function fillTask(p, kind) {
   await visit(p, 'publish/' + kind);
   await p.getByLabel('服务标题').fill(kind === 'help' ? '陪伴交流测试需求' : '生活协助兑换测试');
   await p.getByLabel('具体服务内容').fill('测试业务流程，陪伴老人交流一小时。');
-  await p.locator('.pub-more > summary').click();
-  await p.getByLabel('受助对象／适用人群').fill('测试受助对象');
+  await p.locator('.pub-contact-details > summary').click();
   await p.locator('.pub-address-details > summary').click();
-  await p.getByLabel('详细地址（仅相关人员可见）').fill('测试隐私地址 301');
+  await p.getByLabel('服务详细地址（公开）').fill('测试公开服务站301');
   await p.getByLabel('机构联系人').fill('测试联系人');
   if (kind === 'redeem') {
     await p.getByLabel('兑换所需小时').fill('0');
@@ -64,8 +64,13 @@ async function fillTask(p, kind) {
   }
   await p.getByRole('button', { name: '预览并发布', exact: true }).click();
   await p.getByRole('button', { name: '确认发布', exact: true }).click();
+  if (kind === 'help') {
+    await expect(p).toHaveURL(/#services$/);
+    await expect(p.getByRole('tab', { name: '已发布需求', exact: true })).toHaveAttribute('aria-selected', 'true');
+    await p.locator('.requester-card').first().click();
+  }
   await expect(p).toHaveURL(/#task\//);
-  const id=p.url().split('#task/')[1];
+  const id=p.url().split('#task/')[1].split('/')[0];
   const {domain,store}=server.context;
   domain.taskAction(store.user(store.get('task',id).owner),id,{action:'location',lat:30.25,lng:120.15,reason:'隔离测试坐标补录'});
   return id;
@@ -111,7 +116,8 @@ try {
   await expect(vol.getByRole('heading', { name: '陪伴交流测试需求' })).toBeVisible();
   await snapshot(vol, 'volunteer-hall');
   await visit(vol, 'task/' + taskId);
-  await expect(vol.getByText('测试隐私地址 301', { exact: true })).toHaveCount(0);
+  await expect(vol.getByText('测试公开服务站301', { exact: true })).toBeVisible();
+  await expect(vol.getByText('测试联系人', { exact: true })).toHaveCount(0);
   await vol.getByRole('button', { name: '报名参与', exact: true }).click();
   await vol.getByRole('button', { name: '提交报名', exact: true }).click();
   await expect(vol.getByRole('heading', { name: '我的参与' })).toBeVisible();
@@ -125,11 +131,17 @@ try {
   t.end = new Date(Date.now() - 3600000).toISOString();
   s.put('task', t);
   await vol.reload();
-  await expect(vol.getByText('测试隐私地址 301', { exact: true })).toBeVisible();
+  await expect(vol.getByText('测试公开服务站301', { exact: true })).toBeVisible();
+  await expect(vol.getByText('测试联系人', { exact: true })).toBeVisible();
+  await expect(vol.getByRole('button', { name: '申请调整时间', exact: true })).toHaveCount(0);
+  await expect(vol.locator('[data-action=comments], [data-action=files], .td-resources')).toHaveCount(0);
+  await expect(vol.getByRole('button', { name: '退出报名', exact: true })).toBeVisible();
+  await expect(vol.getByRole('button', { name: '到场签到', exact: true })).toHaveCount(0);
+  await snapshot(vol, 'volunteer-task-actions');
   await vol.getByRole('button', { name: '提交服务记录', exact: true }).click();
-  await vol.getByLabel('实际完成的服务').fill('完成了陪伴交流和数字设备协助。');
-  await vol.getByLabel('未签到／补录／异常说明').fill('测试现场人工核实，未使用定位。');
-  await vol.getByRole('button', { name: '提交核实', exact: true }).click();
+  await expect(vol.getByRole('heading', { name: '感谢你的服务' })).toBeVisible();
+  await expect(vol.locator('#modal-form input, #modal-form textarea')).toHaveCount(0);
+  await vol.getByRole('button', { name: '确认完成', exact: true }).click();
   await expect(vol.getByText('提交 60 分钟 · 已确认 0 分钟 · 0 受助人次')).toBeVisible();
   await org.reload();
   await org.getByRole('button', { name: '核实服务', exact: true }).click();

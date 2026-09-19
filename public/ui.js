@@ -4,6 +4,8 @@ export const esc = (v) =>
     (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c],
   );
 const paths = {
+  gift: 'M3 8h18v4H3zM5 12v10h14V12M12 8v14M12 8H8a3 3 0 113-3l1 3zm0 0h4a3 3 0 10-3-3l-1 3z',
+  phone: 'M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72c.12.96.36 1.9.7 2.79a2 2 0 01-.45 2.11L8.09 9.89a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.89.34 1.83.58 2.79.7A2 2 0 0122 16.92z',
   tag: 'M3 3h8l10 10-8 8L3 11V3zM7 7h.01',
   'help-circle': 'M9 9a3 3 0 016 0c0 2-3 2-3 5m0 3h.01M22 12a10 10 0 11-20 0 10 10 0 0120 0z',
   'chevron-down': 'M6 9l6 6 6-6',
@@ -77,7 +79,6 @@ export const hours = (n) => Number((Number(n || 0) / 60).toFixed(2));
 export const labels = {
   in_progress: '进行中',
   ended: '已结束',
-  draft: '草稿',
   published: '招募中',
   paused: '已暂停',
   cancelled: '已取消',
@@ -86,7 +87,7 @@ export const labels = {
   rejected: '未通过',
   withdrawn: '已退出',
   checked_in: '服务中',
-  submitted: '待核实',
+  submitted: '待机构确认',
   disputed: '异议处理中',
   confirmed: '已完成',
   revoked: '已撤销',
@@ -111,7 +112,7 @@ export const select = (name, label, options, value = '') =>
     .join('')}</select></label>`;
 export const categories = ['陪伴交流', '生活协助', '出行陪同', '陪诊协助', '数字助老', '其他'];
 export function taskCard(t) {
-  return `<a class="task-card" href="#task/${esc(t.id)}"><div class="category-art art-${categories.indexOf(t.category) % 3}">${icon(t.kind === 'redeem' ? 'leaf' : t.category === '出行陪同' ? 'pin' : 'heart')}<span>${esc(t.category)}</span></div><div class="task-content"><div class="between"><h3>${esc(t.title || '未命名草稿')}</h3>${status(t.application?.status || t.displayStatus || t.status)}</div><p class="org">${esc(t.orgName)}</p><p>${icon('pin')}${esc(t.region)}</p><div class="chips"><span>${icon('calendar')}${dateTime(t.start)}</span><span>${hours(t.minutes)} 小时</span></div><div class="between"><small>${t.hasPendingChange ? '安排变更待确认' : t.kind === 'redeem' ? '兑换占用对应机构时长' : `剩余 ${t.remaining} 个名额`}</small><span class="text-action">查看详情 ${icon('arrow')}</span></div>${t.newApplicants ? `<small class="attention">${t.newApplicants} 个新报名待处理</small>` : ''}</div></a>`;
+  return `<a class="task-card" href="#task/${esc(t.id)}"><div class="category-art art-${categories.indexOf(t.category) % 3}">${icon(t.kind === 'redeem' ? 'leaf' : t.category === '出行陪同' ? 'pin' : 'heart')}<span>${esc(t.category)}</span></div><div class="task-content"><div class="between"><h3>${esc(t.title || '未命名服务')}</h3>${status(t.application?.status || t.displayStatus || t.status)}</div><p class="org">${esc(t.orgName)}</p><p>${icon('pin')}${esc(t.region)}</p><div class="chips"><span>${icon('calendar')}${dateTime(t.start)}</span><span>${hours(t.minutes)} 小时</span></div><div class="between"><small>${t.hasPendingChange ? '安排变更待确认' : t.kind === 'redeem' ? '兑换占用对应机构时长' : `剩余 ${t.remaining} 个名额`}</small><span class="text-action">查看详情 ${icon('arrow')}</span></div>${t.newApplicants ? `<small class="attention">${t.newApplicants} 个新报名待处理</small>` : ''}</div></a>`;
 }
 export const bookingCard = (b) =>
-  `<a class="card booking-card" href="#booking/${esc(b.id)}"><div class="between"><h3>${esc(b.title)}</h3>${status(b.status)}</div><p>${esc(b.orgName)} · ${esc(b.applicant)}</p><p>${icon('calendar')}${dateTime(b.start)} — ${dateTime(b.end)}</p><div class="between"><small>${esc(b.region)}</small><b>${b.status === 'completed' ? '已使用 ' + hours(b.charged) : '占用 ' + hours(b.held)} 小时</b></div></a>`;
+  `<a class="card booking-card" href="#booking/${esc(b.id)}"><h3>${esc(b.title)}</h3><p>${esc(b.orgName)} · ${esc(b.recipient || b.applicant)}</p>${b.redemptionMode === 'instant' ? `<p>${icon('phone')}${esc(b.phone)}</p>` : ''}<p>${icon('calendar')}${b.start ? `${dateTime(b.start)} — ${dateTime(b.end)}` : `申请于 ${dateTime(b.created)}`}</p><div class="between"><small>${esc(b.region)}</small><b>${b.status === 'completed' ? '扣除时长 ' + hours(b.charged) : '占用 ' + hours(b.held)} 小时</b></div></a>`;

@@ -1174,19 +1174,6 @@ dialog::backdrop {
 .modal-head .icon-button {
   background: #f2f5f8;
 }
-.comments {
-  max-height: 35vh;
-  overflow: auto;
-  margin-bottom: 20px;
-}
-.comments article {
-  border-bottom: 1px solid var(--line);
-  padding: 12px 0;
-  font-size: 0.85rem;
-}
-.comments p {
-  margin-top: 8px;
-}
 .notice-item {
   border: 0;
   border-bottom: 1px solid var(--line);

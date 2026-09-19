@@ -8,6 +8,33 @@ import { Store } from '../src/store.mjs';
 import { Domain } from '../src/domain.mjs';
 import { Auth } from '../src/auth.mjs';
 
+test('旧草稿及其幂等响应被清理，已发布需求与审计历史保留，重复启动安全', (t) => {
+  const directory = mkdtempSync(join(tmpdir(), 'timeway-retired-drafts-'));
+  t.after(() => {
+    if (dirname(directory) !== resolve(tmpdir()) || !directory.split(/[\\/]/).pop().startsWith('timeway-retired-drafts-'))
+      throw new Error('Invalid cleanup directory');
+    rmSync(directory, { recursive: true, force: true });
+  });
+  const path = join(directory, 'test.sqlite');
+  const initial = new Store(path, 'test');
+  const draft = initial.put('task', { owner: 'org', kind: 'help', status: 'draft', title: '旧草稿' });
+  const published = initial.put('task', { owner: 'org', kind: 'help', status: 'published', title: '已发布内容' });
+  const audit = initial.put('audit', { owner: 'org', ref: draft.id, action: 'create', after: draft });
+  for (const task of [draft, published]) initial.db.prepare('INSERT INTO idempotency VALUES (?,?,?,?)')
+    .run('org', task.id, 'test-fingerprint', JSON.stringify(task));
+  initial.close();
+  for (let i = 0; i < 2; i++) {
+    const store = new Store(path, 'test');
+    try {
+      assert.equal(store.get('task', draft.id), undefined);
+      assert.deepEqual(store.get('task', published.id), published);
+      assert.deepEqual(store.get('audit', audit.id), audit);
+      assert.equal(store.db.prepare('SELECT COUNT(*) n FROM idempotency').get().n, 1);
+      assert.equal(store.db.prepare('SELECT key FROM idempotency').get().key, published.id);
+    } finally { store.close(); }
+  }
+});
+
 test('account initialization and repeated login never create default business content', (t) => {
   const directory = mkdtempSync(join(tmpdir(), 'timeway-empty-accounts-'));
   t.after(() => {
@@ -46,12 +73,12 @@ test('account initialization and repeated login never create default business co
     assert.equal(store.all('task').length, 0);
     const org = store.user('demo-org'),
       volunteer = store.user('demo-vol');
-    const draft = domain.createTask(org, { kind: 'help', title: '需求方填写的内容', status: 'draft' });
+    assert.throws(() => domain.createTask(org, { kind: 'help', title: '需求方填写的内容', status: 'draft' }));
     assert.equal(domain.tasks(volunteer).length, 0);
-    assert.throws(() => domain.createTask(volunteer, { kind: 'help', status: 'draft' }));
+    assert.throws(() => domain.createTask(volunteer, { kind: 'help', status: 'published' }));
     const start = new Date(Date.now() + 86400000).toISOString();
-    domain.saveTask(org, draft.id, {
-      ...draft,
+    domain.createTask(org, {
+      kind: 'help', title: '需求方填写的内容',
       description: '需求方填写',
       recipient: '受助对象',
       region: '杭州西湖区',

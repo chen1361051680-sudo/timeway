@@ -88,12 +88,6 @@ export function seedRequesterAccount(server) {
     .slice(0, 2)
     .map((person) => d.book(person, offer.id, { recipient: '本人', phone: person.phone, consent: true }));
   d.bookingAction(org, bookings[1].id, { action: 'accept' });
-  const draft = d.createTask(org, {
-    ...s.get('task', offer.id),
-    id: undefined,
-    title: '待完善的兑换服务',
-    status: 'draft',
-  });
   d.notify(org.id, '新的服务记录已提交，请核实', `task/${tasks[4].id}/records/${tasks[4].recordId}`);
-  return { session, org, people, tasks, offer, bookings, draft };
+  return { session, org, people, tasks, offer, bookings };
 }

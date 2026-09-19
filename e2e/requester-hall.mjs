@@ -6,6 +6,15 @@ import { mkdir } from 'node:fs/promises';
 
 const server = createTimewayServer({ environment: 'test', databasePath: ':memory:' });
 const fixture = seedRequesterHall(server);
+const ended = server.context.domain.createTask(fixture.org, { ...fixture.tasks[0], title: '已结束的陪伴需求' });
+fixture.apply(ended);
+const endedAt = new Date(Date.now() - 2 * 86400000).toISOString();
+server.context.store.put('task', {
+  ...server.context.store.get('task', ended.id),
+  start: new Date(Date.parse(endedAt) - 120 * 60000).toISOString(),
+  end: endedAt,
+  deadline: endedAt,
+});
 server.listen(0, '127.0.0.1');
 await once(server, 'listening');
 const base = `http://127.0.0.1:${server.address().port}`;
@@ -29,13 +38,12 @@ await mkdir('tmp/ui-checks', { recursive: true });
 const cards = page.locator('.requester-card');
 try {
   await page.goto(base + '/#services');
-  await expect(cards).toHaveCount(4);
-  await expect(page.locator('.requester-count')).toHaveText('5');
+  await expect(cards).toHaveCount(3);
+  await expect(page.locator('.requester-count')).toHaveText('4');
   await expect(page.locator('.published-card')).toContainText([
     '陪伴聊天',
     '陪诊协助',
     '生活帮助',
-    '上门探访',
   ]);
   await expect(page.getByText('测试私人门牌301')).toHaveCount(0);
   await page.evaluate(() => document.fonts.ready);
@@ -52,21 +60,22 @@ try {
     for (const card of await cards.all())
       expect(await card.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
     await page.getByRole('tab', { name: /待办/ }).click();
-    await expect(cards).toHaveCount(4);
+    await expect(cards).toHaveCount(3);
     await page.screenshot({ path: `tmp/ui-checks/requester-todo-${width}.png`, fullPage: true });
     await page.getByRole('tab', { name: '已发布需求', exact: true }).click();
   }
   await page.setViewportSize({ width: 470, height: 800 });
-  await page.getByRole('button', { name: '招募中', exact: true }).click();
-  await expect(cards).toHaveCount(1);
-  await expect(cards).toContainText('陪伴聊天');
-  await page.getByRole('button', { name: '进行中', exact: true }).click();
+  await page.getByRole('button', { name: '历史记录', exact: true }).click();
   await expect(cards).toHaveCount(2);
-  await page.getByRole('button', { name: '已完成', exact: true }).click();
-  await expect(cards).toHaveCount(1);
-  await page.getByRole('button', { name: '已取消', exact: true }).click();
-  await expect(cards).toHaveCount(0);
-  await page.getByRole('button', { name: '全部', exact: true }).click();
+  await expect(cards).toContainText(['已结束的陪伴需求', '上门探访']);
+  await expect(page.locator('.requester-filter')).toHaveText(['当前需求', '历史记录']);
+  await page.screenshot({ path: 'tmp/ui-checks/requester-history.png', fullPage: true });
+  await cards.first().click();
+  await expect(page).toHaveURL(new RegExp(`#task/${ended.id}/records$`));
+  await page.getByRole('button', { name: '返回', exact: true }).click();
+  await expect(page.getByRole('button', { name: '历史记录', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('button', { name: '已取消', exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: '当前需求', exact: true }).click();
   await page.getByRole('tab', { name: /待办/ }).click();
   await page.getByRole('button', { name: '待处理报名 2项', exact: true }).click();
   await expect(cards).toHaveCount(1);
@@ -76,7 +85,7 @@ try {
   await page.getByRole('button', { name: '确认参与', exact: true }).first().click();
   await expect(page.getByRole('button', { name: '确认参与', exact: true })).toHaveCount(1);
   await page.getByRole('button', { name: '返回', exact: true }).click();
-  await expect(page.locator('.requester-count')).toHaveText('4');
+  await expect(page.locator('.requester-count')).toHaveText('3');
   await expect(page.getByRole('button', { name: '待处理报名 1项', exact: true })).toHaveAttribute(
     'aria-pressed',
     'true',
@@ -88,19 +97,19 @@ try {
   await page.locator('#modal-form button[type=submit]').click();
   await expect(page.getByRole('dialog')).not.toBeVisible();
   await page.getByRole('button', { name: '返回', exact: true }).click();
-  await expect(page.locator('.requester-count')).toHaveText('3');
-  await page.getByRole('button', { name: '其他事项 2项', exact: true }).click();
-  await cards.filter({ hasText: '陪诊协助' }).click();
-  await page.getByRole('button', { name: '同意调整', exact: true }).click();
-  await page.locator('#modal-form button[type=submit]').click();
-  await expect(page.getByText('1 人尚未确认；全部处理后新安排生效。')).toBeVisible();
-  await page.getByRole('button', { name: '返回', exact: true }).click();
+  await expect(page.locator('.requester-count')).toHaveText('2');
+  await page.getByRole('button', { name: '其他事项 1项', exact: true }).click();
   await cards.filter({ hasText: '上门探访' }).click();
   await page.getByRole('button', { name: '记录处理结果', exact: true }).click();
   await page.locator('#modal-form [name=reason]').fill('已联系社区并安排补充人员');
   await page.getByRole('button', { name: '完成处理', exact: true }).click();
   await page.getByRole('button', { name: '返回', exact: true }).click();
-  await expect(page.locator('.requester-count')).toHaveText('2');
+  await expect(page.locator('.requester-count')).toHaveText('1');
+  await page.locator('.bottom-nav a[href="#profile"]').click();
+  await page.locator('.rp-menu-row[data-action=history]').click();
+  await expect(page).toHaveURL(/#services$/);
+  await expect(page.getByRole('button', { name: '历史记录', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(cards).toHaveCount(3);
   await page.locator('.bottom-nav a[href="#profile"]').click();
   await page.locator('.rp-menu-row[data-action=notices]').click();
   await expect(page.getByRole('dialog')).toBeVisible();
@@ -108,20 +117,31 @@ try {
   await page.getByRole('button', { name: '关闭弹窗', exact: true }).click();
   await page.locator('.bottom-nav a[href="#services"]').click();
   await page.getByRole('tab', { name: '已发布需求', exact: true }).click();
+  await page.getByRole('button', { name: '历史记录', exact: true }).click();
+  await page.getByRole('tab', { name: /待办/ }).click();
   await page.getByRole('link', { name: '发布需求', exact: true }).click();
   await expect(page).toHaveURL(/#publish\/help$/);
   await expect(page.locator('#publish-form')).toBeVisible();
-  await page.getByLabel('服务标题', { exact: true }).fill('待完善的社区服务');
-  await page.getByRole('button', { name: '保存草稿', exact: true }).click();
-  await expect(page).toHaveURL(/#task\//);
-  await page.locator('.bottom-nav a[href="#services"]').click();
-  await page.getByRole('button', { name: '草稿', exact: true }).click();
-  await expect(cards).toHaveCount(1);
-  await expect(cards).toContainText('继续编辑');
+  await expect(page.locator('.pub-actions button')).toHaveCount(1);
+  await expect(page.getByRole('button', { name: '保存草稿', exact: true })).toHaveCount(0);
+  await page.getByLabel('服务标题', { exact: true }).fill('社区陪伴服务');
+  await page.getByLabel('具体服务内容').fill('陪伴长者交流，帮助阅读报纸。');
+  await page.locator('.pub-address-details > summary').click();
+  await page.getByLabel('服务详细地址（公开）').fill('社区公共服务中心');
+  await page.getByRole('button', { name: '预览并发布', exact: true }).click();
+  await page.getByRole('button', { name: '确认发布', exact: true }).click();
+  await expect(page).toHaveURL(/#services$/);
+  await expect(page.getByRole('tab', { name: '已发布需求', exact: true })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('button', { name: '当前需求', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(cards.first()).toContainText('社区陪伴服务');
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
   await cards.first().click();
-  await expect(page.getByLabel('服务标题', { exact: true })).toHaveValue('待完善的社区服务');
+  await expect(page).toHaveURL(/#task\//);
+  await expect(page.getByRole('button', { name: '复制为草稿', exact: true })).toHaveCount(0);
   await page.locator('.bottom-nav a[href="#services"]').click();
-  await page.getByRole('button', { name: '全部', exact: true }).click();
+  await expect(page.getByRole('button', { name: '草稿', exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: '当前需求', exact: true }).click();
+  await expect(cards.filter({hasText:'社区陪伴服务'})).toHaveCount(1);
   const org = server.context.store.user(fixture.org.id);
   org.settings = { ...org.settings, fontSize: 'large' };
   server.context.store.saveUser(org);
@@ -140,7 +160,7 @@ try {
   expect(typography.weight).toBe('600');
   expect(errors).toEqual([]);
   console.log(
-    '需求方服务大厅通过：四种视口、双页/状态/分类切换、真实待办计数、报名确认、服务核实、时间调整、退出处理、详情定位与返回、消息已读、发布入口。',
+    '需求方服务大厅通过：四种视口、当前/历史/待办切换、真实待办计数、报名确认、服务核实、退出处理、详情定位与返回、消息已读、发布入口。',
   );
 } finally {
   await browser.close();

@@ -1,6 +1,7 @@
 import { esc, icon, btn, link, hours, empty, status } from './ui.js';
 import { profileIcon } from './profile.js';
 import { requesterIcon, requesterDate } from './requester-hall.js';
+import { offerImage, isGoods } from './redeem.js';
 
 const serviceArt = {
   陪伴交流: ['companion', 'heart', 'pink'],
@@ -10,8 +11,8 @@ const serviceArt = {
 };
 const tabs = [
   ['ledger', '发放记录'],
-  ['offers', '兑换服务'],
-  ['bookings', '兑换预约'],
+  ['offers', '兑换物品'],
+  ['bookings', '兑换记录'],
 ];
 const dayKey = (value) =>
   value ? new Date(value).toLocaleDateString('en-CA', { timeZone: 'Asia/Shanghai' }) : '';
@@ -98,11 +99,10 @@ function recordCard(r, pending = false) {
   </a>`;
 }
 function offerCard(t) {
-  const [art] = serviceArt[t.category] || ['companion'];
-  return `<a class="rb-offer" href="#task/${esc(t.id)}"><img src="/images/hall-${art}.webp" alt="" loading="lazy"><div><div class="rb-offer-heading"><h2>${esc(t.title || '未命名草稿')}</h2>${status(t.displayStatus || t.status)}</div><p>${icon('pin')}${esc(t.region)}</p><p>${icon('calendar')}${esc(requesterDate(t.start))}</p><p>所需 ${hours(t.minutes)} 小时 · 剩余 ${t.remaining}/${t.capacity} 名额</p><span class="rb-offer-action">${t.status === 'draft' ? '查看草稿' : '管理服务'}${icon('arrow')}</span></div></a>`;
+  return `<a class="rb-offer" href="#task/${esc(t.id)}">${offerImage(t, 'rb-offer-cover')}<div><div class="rb-offer-heading"><h2>${esc(t.title)}</h2>${t.displayStatus === 'published' ? '<span class="badge status-published">可兑换</span>' : status(t.displayStatus || t.status)}</div><p>${icon('gift')}${esc(t.itemName || t.title)}</p><p>${esc(t.specification)}</p><p>所需 ${hours(t.minutes)} 小时</p><span class="rb-offer-action">管理兑换${icon('arrow')}</span></div></a>`;
 }
 function bookingCard(b, orgId) {
-  return `<a class="rb-booking" href="#booking/${esc(b.id)}"><div class="rb-offer-heading"><h2>${esc(b.title)}</h2>${status(b.status)}</div><p>${icon('user')}申请人：${esc(b.applicant)}</p><p>${icon('calendar')}${esc(requesterDate(b.start))}</p><div class="rb-booking-bottom"><span>${b.status === 'completed' ? `已兑换 ${hours(b.charged)} 小时` : ['cancelled', 'rejected'].includes(b.status) ? '时间占用已释放' : `预约 ${hours(b.held)} 小时`}</span><span class="ra-outline">${bookingNeedsRequester(b, orgId) ? '去处理' : '查看安排'}${icon('arrow')}</span></div></a>`;
+  return `<a class="rb-booking" href="#booking/${esc(b.id)}"><div class="rb-offer-heading"><h2>${esc(b.title)}</h2></div><p>${icon('user')}申请人：${esc(b.recipient || b.applicant)}</p>${b.redemptionMode === 'instant' ? `<p>${icon('phone')}${esc(b.phone)}</p>` : ''}<p>${icon('calendar')}${b.start ? '' : '申请于 '}${esc(requesterDate(b.start || b.created))}</p><div class="rb-booking-bottom"><span>${b.status === 'completed' ? `扣除时长 ${hours(b.charged)} 小时` : ['cancelled', 'rejected'].includes(b.status) ? '时间占用已释放' : `占用 ${hours(b.held)} 小时`}</span><span class="ra-outline">${bookingNeedsRequester(b, orgId) ? '去处理' : '查看详情'}${icon('arrow')}</span></div></a>`;
 }
 function filterButton(label, type, glyph, selected) {
   return btn(
@@ -119,19 +119,10 @@ export function requesterBank({
   tasks,
   tab = 'ledger',
   filter = {},
-  bookingStatus = '',
-  bookingWorkOnly = false,
 }) {
   const records = requesterIssueRecords(tasks, filter);
-  const offers = tasks.filter((t) => t.kind === 'redeem');
-  const pendingBookings = bank.bookings.filter((b) => bookingNeedsRequester(b, user.id));
-  const bookings = bank.bookings
-    .filter(
-      (b) =>
-        (!bookingStatus || b.status === bookingStatus) &&
-        (!bookingWorkOnly || bookingNeedsRequester(b, user.id)),
-    )
-    .sort((a, b) => String(b.created).localeCompare(String(a.created)));
+  const offers = tasks.filter((t) => t.kind === 'redeem' && isGoods(t));
+  const bookings = [...bank.bookings].sort((a, b) => String(b.created).localeCompare(String(a.created)));
   const metric = (label, value, unit, glyph, color, id) =>
     btn(
       `<span class="rb-metric-heading"><span class="rb-metric-icon">${accountIcon(glyph)}</span><span>${label}</span></span><span class="rb-metric-value"><strong>${value}</strong><span>${unit}</span>${icon('arrow')}</span>`,
@@ -142,10 +133,10 @@ export function requesterBank({
     );
   return `<header class="ra-header rb-header"><h1>时间银行</h1><p>记录每一份服务 让时间汇聚成温暖</p></header>
     <section class="rb-summary" aria-label="本机构时间统计"><div class="rb-org"><span class="rb-org-icon">${accountIcon('community')}</span><div>${btn(`${esc(user.name)}${icon('arrow')}`, 'requester-org-info', '', 'rb-org-name')}<p>汇聚社区力量 · 用时间传递温暖</p></div>${btn(`查看记录${icon('arrow')}`, 'requester-bank-metric', 'issued', 'ra-outline rb-view-records')}</div>
-    <div class="rb-metrics">${metric('已确认发放时长', hours(bank.issued), '小时', 'time', 'red', 'issued')}${metric('待核实时长', hours(bank.pending), '小时', 'pending', 'blue', 'pending')}${metric('待处理兑换', pendingBookings.length, '条', 'hourglass', 'amber', 'bookings')}</div>
+    <div class="rb-metrics">${metric('已确认发放时长', hours(bank.issued), '小时', 'time', 'red', 'issued')}${metric('待核实时长', hours(bank.pending), '小时', 'pending', 'blue', 'pending')}${metric('兑换记录', bank.bookings.length, '条', 'gift', 'amber', 'bookings')}</div>
     <p class="rb-summary-note">${accountIcon('info')}<span>此处仅统计本机构已确认发放的志愿服务时长，不显示志愿者个人余额。</span></p></section>
     <section class="rb-content"><div class="rb-tabs" role="tablist" aria-label="时间银行记录">${tabs.map(([id, title]) => btn(title, 'bank-tab', id, `rb-tab${tab === id ? ' active' : ''}`, `id="rb-tab-${id}" role="tab" aria-selected="${tab === id}" aria-controls="rb-panel"`)).join('')}</div>
-    <div id="rb-panel" role="tabpanel" aria-labelledby="rb-tab-${tab}">${tab === 'ledger' ? `<div class="rb-filters">${filterButton(filter.date ? dayLabel(filter.date + 'T12:00:00+08:00') : '日期', 'date', 'calendar', filter.date)}${filterButton(filter.task ? tasks.find((t) => t.id === filter.task)?.title || '已选任务' : '任务', 'task', 'grid', filter.task)}${filter.date || filter.task || filter.mode ? btn('重置', 'requester-bank-reset', '', 'rb-reset') : ''}</div>${filter.mode === 'pending' ? '<p class="rb-list-heading">待核实服务记录</p>' : ''}<div class="rb-records">${records.map((r) => recordCard(r, filter.mode === 'pending')).join('') || empty(filter.mode === 'pending' ? '暂无待核实的服务记录' : '暂无符合条件的发放记录', '经核实的实际服务会在这里留下时间记录。')}</div>` : tab === 'offers' ? `${link(`${icon('plus')}新增兑换服务`, 'publish/redeem', 'rb-publish')}<div class="rb-offers">${offers.map(offerCard).join('') || empty('还没有兑换服务', '发布本机构实际可以提供的服务，让志愿时间传递温暖。')}</div>` : `<div class="rb-booking-filters">${filterButton(bookingStatus ? { pending: '待确认', accepted: '待服务', reschedule: '改约待确认', result_pending: '待确认结果', disputed: '异议处理中', completed: '已完成', cancelled: '已取消', rejected: '未通过' }[bookingStatus] : '预约状态', 'booking-status', 'filter', bookingStatus)}${btn(bookingWorkOnly ? '待处理事项' : '仅看待处理', 'requester-booking-work', '', `rb-filter${bookingWorkOnly ? ' selected' : ''}`, `aria-pressed="${bookingWorkOnly}"`)}</div><div class="rb-bookings">${bookings.map((b) => bookingCard(b, user.id)).join('') || empty('暂无相关兑换预约', '新的预约申请会在这里显示。')}</div>`}</div></section>`;
+    <div id="rb-panel" role="tabpanel" aria-labelledby="rb-tab-${tab}">${tab === 'ledger' ? `<div class="rb-filters">${filterButton(filter.date ? dayLabel(filter.date + 'T12:00:00+08:00') : '日期', 'date', 'calendar', filter.date)}${filterButton(filter.task ? tasks.find((t) => t.id === filter.task)?.title || '已选任务' : '任务', 'task', 'grid', filter.task)}${filter.date || filter.task || filter.mode ? btn('重置', 'requester-bank-reset', '', 'rb-reset') : ''}</div>${filter.mode === 'pending' ? '<p class="rb-list-heading">待核实服务记录</p>' : ''}<div class="rb-records">${records.map((r) => recordCard(r, filter.mode === 'pending')).join('') || empty(filter.mode === 'pending' ? '暂无待核实的服务记录' : '暂无符合条件的发放记录', '经核实的实际服务会在这里留下时间记录。')}</div>` : tab === 'offers' ? `${link(`${icon('plus')}新增兑换物品`, 'publish/redeem', 'rb-publish')}<div class="rb-offers">${offers.map(offerCard).join('') || empty('还没有兑换物品', '发布机构提供的物品，让志愿者使用时间权益兑换。')}</div>` : `<div class="rb-bookings">${bookings.map((b) => bookingCard(b, user.id)).join('') || empty('暂无兑换记录', '志愿者兑换成功后，申请人信息会在这里显示。')}</div>`}</div></section>`;
 }
 
 export function requesterProfile(user, summary, bank) {
@@ -159,8 +150,8 @@ export function requesterProfile(user, summary, bank) {
     );
   const rows = [
     ['map', 'mint', '本机构爱心成果', '查看组织帮扶形成的点亮片区和服务成果', 'footprints'],
-    ['clipboard', 'blue', '帮扶记录', '查看本机构发布及完成的需求', 'history'],
-    ['gift', 'orange', '兑换预约记录', '查看并处理兑换服务的预约申请', 'my-bookings'],
+    ['clipboard', 'blue', '帮扶记录', '查看本机构已结束及完成的需求', 'history'],
+    ['gift', 'orange', '兑换记录', '查看兑换物品与申请人联系方式', 'my-bookings'],
     ['message', 'pink', '业务消息', '查看新报名、服务提交、兑换申请及变更提醒', 'notices'],
   ];
   return `<header class="rp-cover"><h1>我的</h1><p>汇聚社区力量 让每一份帮助有回响</p>${btn(settingsGlyph, 'settings', '', 'rp-settings', 'aria-label="设置"')}</header>

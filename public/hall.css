@@ -134,6 +134,7 @@
   min-height: 45px;
 }
 .hall-filter {
+  flex: 1;
   border: 0;
   border-radius: 11px;
   background: #f1f5fa;
@@ -152,15 +153,6 @@
 .hall-filter .icon {
   width: 11px;
   height: 11px;
-}
-.hall-filter:last-child {
-  background: none;
-  padding-inline: 1px;
-  margin-left: auto;
-}
-.hall-filter:last-child .icon:first-child {
-  width: 13px;
-  height: 13px;
 }
 .hall-filter.selected {
   color: #e5534f;
@@ -243,8 +235,10 @@
   font-weight: 600;
   line-height: 1.45;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow-wrap: anywhere;
 }
 .hall-vacancy {
   flex-shrink: 0;
@@ -299,6 +293,7 @@
 }
 .hall-chips {
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
   gap: 0.85cqw;
   margin-top: 7px;
@@ -327,25 +322,15 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 3px;
-  margin-top: -5px;
-}
-.hall-arrival {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  color: var(--hall-muted);
-  font-size: clamp(9px, 2.35cqw, 11.5px);
-  white-space: nowrap;
-  padding-top: 11px;
-}
-.hall-arrival .icon {
-  width: 17px;
-  height: 17px;
-  color: #3e5677;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
 }
 .hall-detail {
   display: inline-flex;
+  flex-shrink: 0;
+  white-space: nowrap;
+  margin-left: auto;
   justify-content: center;
   align-items: center;
   color: white;
@@ -458,9 +443,6 @@
 .hall-location {
   line-height: 1.5;
 }
-.hall-card-bottom {
-  margin-top: -8px;
-}
 @media (hover: hover) {
   .hall-card:hover {
     transform: translateY(-1px);
@@ -499,13 +481,6 @@
     width: 11px;
     height: 11px;
   }
-  .hall-arrival {
-    gap: 3px;
-  }
-  .hall-arrival .icon {
-    width: 13px;
-    height: 13px;
-  }
 }
 .large-text .hall-card h3 {
   font-size: 17px;
@@ -513,7 +488,6 @@
 }
 .large-text .hall-org,
 .large-text .hall-location,
-.large-text .hall-arrival,
 .large-text .hall-chips span {
   font-size: 13px;
 }
@@ -522,12 +496,6 @@
 .large-text .hall-card-heading,
 .large-text .hall-filters {
   flex-wrap: wrap;
-}
-.large-text .hall-card-bottom {
-  margin-top: 5px;
-}
-.large-text .hall-arrival {
-  padding-top: 0;
 }
 .large-text .hall-detail {
   margin-left: auto;

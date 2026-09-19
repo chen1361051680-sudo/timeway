@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
@@ -11,7 +12,6 @@ import { DatabaseSync } from 'node:sqlite';
 async function setup(t) {
   const dir = mkdtempSync(join(tmpdir(), 'timeway-http-'));
   const server = createTimewayServer({ environment: 'test', databasePath: join(dir, 'test.sqlite') });
-  server.context.uploads = join(dir, 'files');
   server.listen(0, '127.0.0.1');
   await once(server, 'listening');
   t.after(async () => {
@@ -51,7 +51,7 @@ async function setup(t) {
     );
     return { auth, user: server.context.store.user(id) };
   };
-  return { server, base, call, login };
+  return { server, base, call, login, dir };
 }
 const input = () => ({
   kind: 'help',
@@ -66,7 +66,45 @@ const input = () => ({
   capacity: 1,
   status: 'published',
 });
-test('HTTP concurrent final-place acceptance, exact replay, cross-role and private attachments', async (t) => {
+test('发布并发回归：重复重试只保存一次，独立提交完整写入，冲突不产生副作用', async (t) => {
+  const { call, login, server } = await setup(t);
+  const org = await login('requester');
+  const payload = { ...input(), recipient: '', title: '核心信息发布并发检查' };
+  const started = performance.now();
+  const requests = [
+    ...Array.from({ length: 30 }, () => ({ body: payload, key: 'publish-replay-load' })),
+    ...Array.from({ length: 20 }, (_, i) => ({
+      body: { ...payload, title: `独立发布 ${i}` },
+      key: `publish-unique-${i}`,
+    })),
+  ];
+  const responses = await Promise.all(
+    requests.map(({ body, key }) => call('/tasks', body, { ...org.auth, 'idempotency-key': key })),
+  );
+  assert.ok(responses.every((r) => r.status === 200));
+  assert.equal(new Set(responses.slice(0, 30).map((r) => r.data.id)).size, 1);
+  assert.equal(new Set(responses.slice(30).map((r) => r.data.id)).size, 20);
+  assert.equal(server.context.store.all('task').length, 21);
+  const conflicts = await Promise.all(
+    Array.from({ length: 10 }, (_, i) =>
+      call(
+        '/tasks',
+        { ...payload, title: `错误重用标识 ${i}` },
+        {
+          ...org.auth,
+          'idempotency-key': 'publish-replay-load',
+        },
+      ),
+    ),
+  );
+  assert.ok(conflicts.every((r) => r.status === 409));
+  assert.equal(server.context.store.all('task').length, 21);
+  t.diagnostic(
+    `本地隔离 SQLite：50 个并发发布请求及 10 个冲突请求，耗时 ${Math.round(performance.now() - started)} ms；该结果不代表生产容量。`,
+  );
+});
+
+test('HTTP concurrent final-place acceptance, exact replay, cross-role and contact privacy', async (t) => {
   const { call, login } = await setup(t),
     org = await login('requester'),
     vol = await login('volunteer'),
@@ -94,38 +132,10 @@ test('HTTP concurrent final-place acceptance, exact replay, cross-role and priva
     403,
   );
   const publicTask = await call('/tasks/' + id, undefined, loser.auth);
-  assert.equal(publicTask.data.address, undefined);
+  assert.equal(publicTask.data.address, input().address);
+  assert.equal(publicTask.data.phone, undefined);
   assert.equal(publicTask.data.recipient, undefined);
   assert.deepEqual(publicTask.data.applications, []);
-  assert.equal((await call('/comments/' + id, undefined, loser.auth)).status, 403);
-  const upload = await call(
-    '/attachments',
-    {
-      ref: id,
-      name: 'service.pdf',
-      type: 'application/pdf',
-      base64: Buffer.from('%PDF-1.4\nTest record').toString('base64'),
-    },
-    winner.auth,
-  );
-  assert.equal(upload.status, 200);
-  assert.equal((await call('/attachments/' + upload.data.id, undefined, outsider.auth)).status, 403);
-  assert.equal((await call('/attachments/' + upload.data.id, undefined, org.auth)).status, 200);
-  assert.equal(
-    (
-      await call(
-        '/attachments',
-        {
-          ref: id,
-          name: 'fake.png',
-          type: 'image/png',
-          base64: Buffer.from('<script>bad</script>').toString('base64'),
-        },
-        winner.auth,
-      )
-    ).status,
-    400,
-  );
   assert.equal(
     (
       await call(
@@ -139,6 +149,32 @@ test('HTTP concurrent final-place acceptance, exact replay, cross-role and priva
   );
   await call('/auth/logout', {}, winner.auth);
   assert.equal((await call('/bank', undefined, winner.auth)).status, 401);
+});
+test('removed comments and material endpoints reject old clients and preserve stored history', async (t) => {
+  const { call, login, server, dir } = await setup(t);
+  const org = await login('requester'), vol = await login('volunteer');
+  const store = server.context.store;
+  const comment = store.put('comment', { ref: 'legacy-task', owner: org.user.id, content: '旧留言' });
+  const attachment = store.put('attachment', { ref: 'legacy-task', owner: org.user.id, name: '旧材料.pdf' });
+  const legacyFile = join(dir, attachment.id);
+  writeFileSync(legacyFile, '旧材料内容');
+  for (const actor of [org, vol]) {
+    for (const path of ['/comments/legacy-task', '/files/legacy-task', '/attachments/' + attachment.id])
+      assert.equal((await call(path, undefined, actor.auth)).status, 404);
+    for (const type of ['message', 'review'])
+      assert.equal((await call('/comments/legacy-task', { type, content: '新增内容' }, actor.auth)).status, 404);
+    assert.equal((await call('/attachments', {
+      ref: 'legacy-task', name: 'new.pdf', type: 'application/pdf',
+      base64: Buffer.from('%PDF-1.4').toString('base64'),
+    }, actor.auth)).status, 404);
+  }
+  const body = { type: 'message', content: '旧留言' };
+  const fingerprint = createHash('sha256').update('POST/api/comments/legacy-task' + JSON.stringify(body)).digest('hex');
+  store.db.prepare('INSERT INTO idempotency VALUES (?,?,?,?)').run(org.user.id, 'legacy-comment-replay', fingerprint, JSON.stringify(comment));
+  assert.equal((await call('/comments/legacy-task', body, { ...org.auth, 'idempotency-key': 'legacy-comment-replay' })).status, 404);
+  assert.deepEqual(store.all('comment'), [comment]);
+  assert.deepEqual(store.all('attachment'), [attachment]);
+  assert.equal(readFileSync(legacyFile, 'utf8'), '旧材料内容');
 });
 test('demo login checks credentials and role, reuses profiles, and removes registration', async (t) => {
   const { call, server } = await setup(t);

@@ -12,6 +12,7 @@ import {
 } from './common.mjs';
 import { routeFits } from './routing.mjs';
 import { normalizePlace } from './place.mjs';
+import { regionKey } from '../public/map-region.js';
 
 export class Domain {
   constructor(store, adapters = { route: () => ({ minutes: null, returnMinutes: null, distance: null }) }) {
@@ -62,34 +63,47 @@ export class Domain {
   taskData(u, b, old) {
     const kind = old?.kind || b.kind;
     check(['help', 'redeem'].includes(kind), '需求类型错误');
-    const status = b.status || old?.status || 'draft';
-    check(['draft', 'published', 'paused'].includes(status), '请通过取消操作结束需求');
-    const draft = status === 'draft';
+    const status = b.status || old?.status || 'published';
+    check(['published', 'paused'].includes(status), '请通过取消操作结束需求');
+    if (kind === 'redeem') {
+      check(!b.offerType || b.offerType === 'goods', '仅支持发布兑换物品');
+      const coverId = text(b.coverId ?? old?.coverId ?? '', '封面图片', 64, false);
+      if (coverId) check(this.s.get('offer-cover', coverId)?.owner === u.id, '请选择本机构上传的封面图片', 403);
+      return {
+        ...old, owner: u.id, kind, status, offerType: 'goods',
+        itemName: text(b.itemName, '物品名称', 100),
+        title: text(b.title, '标题', 100),
+        specification: text(b.specification, '规格', 200),
+        minutes: integer(b.minutes, '兑换所需分钟数', 1, 1440),
+        coverId, category: '其他', region: u.region || '',
+        start: null, end: null, deadline: null, capacity: null,
+      };
+    }
     const t = {
       ...(old || {}),
       owner: u.id,
       kind,
-      title: text(b.title, '标题', 100, !draft),
+      title: text(b.title, '标题', 100),
       category: text(b.category || '陪伴交流', '服务类型', 30),
-      description: text(b.description, '服务内容', 3000, !draft),
-      recipient: text(b.recipient || '', '受助对象或适用人群', 300, false),
-      region: text(b.region || u.region, '服务区域', 100, !draft),
-      address: text(b.address, '详细服务地址', 300, !draft),
-      meeting: text(b.meeting || '', '集合与到达说明', 500, false),
-      contact: text(b.contact || u.contact || u.name, '联系人', 80, !draft),
-      phone: text(b.phone || u.contactPhone || u.phone, '联系电话', 30, !draft),
-      requirements: text(b.requirements || '', '能力与注意事项', 500, false),
+      description: text(b.description, '服务内容', 3000),
+      recipient: text(b.recipient ?? old?.recipient ?? '', '受助对象或适用人群', 300, false),
+      region: text(b.region || u.region, '服务区域', 100),
+      address: text(b.address, '详细服务地址', 300),
+      meeting: text(b.meeting ?? old?.meeting ?? '', '集合与到达说明', 500, false),
+      contact: text(b.contact || u.contact || u.name, '联系人', 80),
+      phone: text(b.phone || u.contactPhone || u.phone, '联系电话', 30),
+      requirements: text(b.requirements ?? old?.requirements ?? '', '能力与注意事项', 500, false),
       start: date(b.start || new Date(Date.now() + 86400000), '开始时间'),
       end: date(b.end || new Date(Date.now() + 90000000), '结束时间'),
       deadline: date(b.deadline || b.start || new Date(Date.now() + 86400000), '报名截止时间'),
-      capacity: integer(b.capacity || 1, '人数／名额', 1, 200),
-      minutes: integer(b.minutes || 60, '服务或兑换分钟数', 1, 1440),
-      recipients: integer(b.recipients || 1, '预计受助人数', 1, 10000),
+      capacity: integer(b.capacity ?? 1, '人数／名额', 1, 200),
+      minutes: integer(b.minutes ?? 60, '服务或兑换分钟数', 1, 1440),
+      recipients: integer((b.recipients ?? old?.recipients) || 1, '预计受助人数', 1, 10000),
       status,
     };
     check(t.end > t.start, '结束时间必须晚于开始时间');
     check(t.deadline <= t.start, '报名截止时间不得晚于开始时间');
-    if (!draft && (!old || old.status === 'draft')) {
+    if (!old) {
       check(t.start > now(), '新发布服务时间必须晚于当前时间');
       check(t.deadline > now(), '新发布服务的报名截止时间必须晚于当前时间');
     }
@@ -112,7 +126,7 @@ export class Domain {
     if (b.place != null) Object.assign(t, normalizePlace(b.place));
     else if (b.place === null || lat !== old?.lat || lng !== old?.lng) delete t.place;
     t.cell = t.lat === null ? null : cellFor(t.lat, t.lng);
-    if (!draft) check(/^[+\d][\d\s()-]{5,29}$/.test(t.phone), '请填写有效的联系电话');
+    check(/^[+\d][\d\s()-]{5,29}$/.test(t.phone), '请填写有效的联系电话');
     return t;
   }
   createTask(u, b) {
@@ -126,25 +140,31 @@ export class Domain {
   saveTask(u, id, b) {
     this.actor(u, 'requester');
     const old = this.own('task', id, u);
-    check(old.status !== 'cancelled', '已取消需求请复制后重新发布', 409);
+    check(old.status !== 'deleted', '物品已删除', 404);
+    check(old.status !== 'cancelled', '已取消需求不可编辑，请重新发布', 409);
     check(!old.pending, '请先完成已有变更确认', 409);
     check(Number(b.revision) === old.revision, '内容已更新，请刷新后重新编辑', 409);
     const t = this.taskData(u, b, old);
-    check(old.status === 'draft' || t.status === old.status, '请使用暂停或取消操作管理已发布需求', 409);
+    check(t.status === old.status, '请使用暂停或取消操作管理已发布需求', 409);
     const occupied =
       old.kind === 'help'
         ? this.apps(id).filter(activeApplication).length
         : this.bookings(id).filter(activeBooking).length;
-    check(t.capacity >= occupied, '名额不能少于已确认或预约人数');
+    check(t.capacity === null || t.capacity >= occupied, '名额不能少于已确认或预约人数');
     const keys = ['title', 'description', 'start', 'end', 'address', 'meeting', 'lat', 'lng', 'minutes'];
-    const core = keys.some((k) => t[k] !== old[k]);
+    const core = keys.some((k) => t[k] !== old[k]) || (old.kind === 'redeem' && (
+      t.offerType !== (old.offerType || 'service') ||
+      t.itemName !== old.itemName ||
+      t.specification !== (old.specification || '') ||
+      t.fulfillment !== (old.fulfillment || '')
+    ));
     if (core) {
       const participants =
         old.kind === 'help'
           ? this.apps(id).filter((a) =>
               ['accepted', 'checked_in', 'submitted', 'disputed', 'confirmed'].includes(a.status),
             )
-          : this.bookings(id).filter(activeBooking);
+          : this.bookings(id).filter((b) => activeBooking(b) && b.redemptionMode !== 'instant');
       check(
         !participants.some((a) =>
           old.kind === 'help' ? a.status !== 'accepted' : !['pending', 'accepted'].includes(a.status),
@@ -168,9 +188,23 @@ export class Domain {
     this.audit(u, id, 'edit', old, t);
     return this.taskView(u, t);
   }
+  deleteOffer(u, id) {
+    this.actor(u, 'requester');
+    const t = this.own('task', id, u);
+    check(t.kind === 'redeem' && t.offerType === 'goods', '仅支持删除兑换物品');
+    if (t.status === 'deleted') return { id, deleted: true };
+    const before = structuredClone(t);
+    t.status = 'deleted';
+    t.deletedAt = now();
+    t.revision++;
+    this.s.put('task', t);
+    this.audit(u, id, 'delete', before, t);
+    return { id, deleted: true };
+  }
   taskAction(u, id, b) {
     this.actor(u, 'requester');
     const t = this.own('task', id, u);
+    check(t.status !== 'deleted', '物品已删除', 404);
     if (b.action === 'location') {
       check(
         !this.apps(id).some((a) => ['accepted', 'checked_in', 'submitted', 'disputed'].includes(a.status)) &&
@@ -202,22 +236,6 @@ export class Domain {
       this.audit(u, id, 'location', before, t, reason);
       return this.taskView(u, t);
     }
-    if (b.action === 'copy') {
-      const copy = {
-        ...t,
-        ...b,
-        start: b.start || new Date(Date.now() + 86400000).toISOString(),
-        end: b.end || new Date(Date.now() + 90000000).toISOString(),
-        deadline: b.start || new Date(Date.now() + 86400000).toISOString(),
-        status: 'draft',
-      };
-      delete copy.id;
-      delete copy.pending;
-      delete copy.created;
-      delete copy.updated;
-      copy.revision = 1;
-      return this.createTask(u, copy);
-    }
     if (b.action === 'cancel') {
       if (t.status === 'cancelled') return this.taskView(u, t);
       const reason = text(b.reason, '取消原因', 500);
@@ -243,8 +261,10 @@ export class Domain {
     check(['pause', 'resume', 'publish'].includes(b.action), '未知操作');
     check(t.status !== 'cancelled', '已取消需求不能恢复');
     if (['publish', 'resume'].includes(b.action)) {
-      check(t.start > now(), '服务时间已过，请先编辑');
-      check(t.deadline > now(), '报名截止时间已过，请先编辑');
+      if (t.start) {
+        check(t.start > now(), '服务时间已过，请先编辑');
+        check(t.deadline > now(), '报名截止时间已过，请先编辑');
+      }
       this.taskData(u, { ...t, status: 'published' }, t);
     }
     t.status = b.action === 'pause' ? 'paused' : 'published';
@@ -286,21 +306,30 @@ export class Domain {
       return this.applicationView(u, existing);
     check(this.apps(id).filter(activeApplication).length < t.capacity, '名额已满', 409);
     check(!this.conflict(u.id, t.start, t.end, id), '与已确认安排时间冲突', 409);
+    const applicantName = text(b.applicantName === undefined ? u.name : b.applicantName, '姓名', 80);
+    const applicantPhone = text(b.applicantPhone === undefined ? u.phone : b.applicantPhone, '联系方式', 30);
+    check(/^[+\d][\d\s()-]{5,29}$/.test(applicantPhone), '请填写有效的联系方式');
     const a = this.s.put('application', {
       id: `${id}_${u.id}`,
       owner: t.owner,
       userId: u.id,
       taskId: id,
       status: 'pending',
-      message: text(b.message || '', '报名留言', 500, false),
+      applicantName,
+      applicantPhone,
     });
     this.notify(t.owner, '收到新的志愿报名', `task/${id}`);
     return this.applicationView(u, a);
   }
   applicationView(u, a) {
+    const volunteer = this.s.user(a.userId);
+    const { applicantName, applicantPhone, ...application } = a;
     return {
-      ...a,
-      volunteer: { id: a.userId, name: this.s.user(a.userId)?.name, skills: this.s.user(a.userId)?.skills },
+      ...application,
+      volunteer: {
+        id: a.userId, name: applicantName || volunteer?.name, skills: volunteer?.skills,
+        ...(u?.id === a.owner ? { phone: applicantPhone || volunteer?.contactPhone || volunteer?.phone || '' } : {}),
+      },
       record: this.s.get('record', a.id) || null,
     };
   }
@@ -310,41 +339,7 @@ export class Domain {
     check(a, '报名不存在', 404);
     const t = this.s.get('task', a.taskId);
     check(a.userId === u.id || t.owner === u.id, '无权访问', 403);
-    if (b.action === 'request-change') {
-      check(a.userId === u.id, '仅本人可申请调整时间', 403);
-      check(a.status === 'accepted' && t.status !== 'cancelled' && !t.pending, '当前不能申请调整时间', 409);
-      check(!a.changeRequest, '已有待处理的时间调整申请', 409);
-      const start = date(b.start, '建议开始时间'), end = date(b.end, '建议结束时间');
-      check(start > now() && end > start, '建议时间应在未来，且结束时间晚于开始时间');
-      check(t.minutes <= (Date.parse(end) - Date.parse(start)) / 60000, '建议时间段不能短于服务时长');
-      check(start !== t.start || end !== t.end, '建议时间与原安排相同');
-      check(!this.conflict(a.userId, start, end, t.id), '建议时间与已有服务冲突', 409);
-      a.changeRequest = { start, end, reason: text(b.reason, '调整原因', 500), created: now() };
-      delete a.changeResolution;
-      this.s.put('application', a);
-      this.notify(t.owner, '志愿者申请调整服务时间，请确认', `task/${t.id}/changes`);
-      this.audit(u, a.id, 'request-change', null, a.changeRequest);
-    } else if (['accept-request-change', 'reject-request-change'].includes(b.action)) {
-      check(t.owner === u.id, '仅需求方可处理时间调整申请', 403);
-      if (!a.changeRequest && a.changeResolution?.action === b.action) return this.applicationView(u, a);
-      check(a.status === 'accepted' && a.changeRequest && t.status !== 'cancelled', '时间调整申请已失效', 409);
-      const requested = a.changeRequest;
-      const reason = text(b.reason || '', '处理说明', 500, b.action === 'reject-request-change');
-      if (b.action === 'accept-request-change') {
-        check(requested.start > now(), '建议时间已过，请联系志愿者重新申请', 409);
-        check(!this.conflict(a.userId, requested.start, requested.end, t.id), '志愿者已有时间冲突', 409);
-        this.saveTask(u, t.id, { ...t, start: requested.start, end: requested.end, deadline: t.deadline > requested.start ? requested.start : t.deadline });
-        // The applicant explicitly proposed these times. Other accepted volunteers
-        // must still confirm through the existing arrangement-change workflow.
-        const changing = this.s.get('task', t.id);
-        this.settleTaskChange(changing, a.id, 'accepted');
-      }
-      a.changeResolution = { action: b.action, reason, requested, handled: now() };
-      delete a.changeRequest;
-      this.s.put('application', a);
-      this.audit(u, a.id, b.action, requested, a.changeResolution, reason);
-      this.notify(a.userId, b.action === 'accept-request-change' ? '时间调整已同意，请查看服务安排' : '时间调整未通过，请查看处理说明', `task/${t.id}/arrangement`);
-    } else if (b.action === 'handle-withdrawal') {
+    if (b.action === 'handle-withdrawal') {
       check(t.owner === u.id, '仅需求方可处理人员退出', 403);
       check(a.status === 'withdrawn' && a.wasAccepted, '没有待处理的人员退出', 409);
       if (a.withdrawalHandled) return this.applicationView(u, a);
@@ -372,24 +367,10 @@ export class Domain {
       check(['pending', 'accepted'].includes(a.status), '已开始服务请提交实际记录', 409);
       a.reason = text(b.reason, '退出原因', 500);
       a.status = 'withdrawn';
-      delete a.changeRequest;
       this.s.put('application', a);
       this.notify(t.owner, '志愿者退出，请调整人员安排', `task/${t.id}`);
       this.settleTaskChange(t, a.id, 'declined');
-    } else if (b.action === 'checkin') {
-      check(a.userId === u.id, '仅本人可签到', 403);
-      if (a.status === 'checked_in') return this.applicationView(u, a);
-      check(a.status === 'accepted' && t.status !== 'cancelled' && !t.pending, '当前不能签到', 409);
-      check(
-        Date.now() >= Date.parse(t.start) - 3600000 && Date.now() <= Date.parse(t.end) + 86400000,
-        '不在签到时间范围，可使用补录说明',
-        409,
-      );
-      a.checkin = now();
-      a.status = 'checked_in';
-      a.checkinNote = text(b.note || '定位未接入，使用人工核实', '签到说明', 500);
-      this.s.put('application', a);
-    } else if (b.action === 'submit') {
+    } else if (b.action === 'submit' || b.action === 'complete') {
       check(a.userId === u.id, '仅本人可提交记录', 403);
       if (['submitted', 'confirmed'].includes(a.status)) return this.applicationView(u, a);
       check(
@@ -399,19 +380,35 @@ export class Domain {
         409,
       );
       check(!t.pending, '请先确认安排变更', 409);
+      const completion = b.action === 'complete';
+      if (completion) {
+        const previous = this.s.get('record', id);
+        if (previous) {
+          b = { start: previous.start, end: previous.end, rest: previous.rest, content: previous.content, note: previous.note };
+        } else {
+          const startAt = Date.parse(t.start);
+          const endAt = Math.max(startAt, Math.min(Date.parse(t.end), startAt + t.minutes * 60000,
+            a.status === 'cancelled' ? Date.parse(t.updated) : Infinity));
+          b = {
+            start: t.start, end: new Date(endAt).toISOString(), rest: 0,
+            content: '志愿者已确认完成本次服务。',
+            note: '时间按服务安排生成，请需求方核实实际服务时长。',
+          };
+        }
+      }
       const start = date(b.start, '实际开始时间'),
         end = date(b.end, '实际结束时间'),
         rest = integer(b.rest || 0, '休息分钟', 0, 1440);
       const duration = Math.floor((Date.parse(end) - Date.parse(start)) / 60000) - rest;
       check(duration >= 0 && duration <= 1440, '有效服务时间不合理');
-      check(Date.parse(end) <= Date.now() + 60000, '不能提前提交未来服务');
+      if (!completion) check(Date.parse(end) <= Date.now() + 60000, '不能提前提交未来服务');
       check(
         Date.parse(start) >= Date.parse(t.start) - 86400000 &&
           Date.parse(end) <= Date.parse(t.end) + 86400000,
         '实际时间偏离约定超过一天，请先更正安排',
       );
-      if (a.status === 'cancelled') check(end <= t.updated, '取消后未开展的服务不能补录');
-      const note = text(b.note || '', '补录说明', 500, !a.checkin);
+      if (a.status === 'cancelled' && !completion) check(end <= t.updated, '取消后未开展的服务不能补录');
+      const note = text(b.note || '', '补充说明', 500, false);
       const record = this.s.get('record', id) || {
         id,
         owner: t.owner,
@@ -430,6 +427,7 @@ export class Domain {
         content: text(b.content, '实际服务内容', 2000),
         note,
         status: 'submitted',
+        ...(completion ? { submissionMode: 'completion' } : {}),
       });
       this.s.put('record', record);
       a.status = 'submitted';
@@ -458,12 +456,13 @@ export class Domain {
     t.pending.answers[id] = answer;
     if (!Object.values(t.pending.answers).includes('pending')) {
       const next = { ...t.pending.proposed, id: t.id, revision: t.revision + 1 };
+      if (t.status === 'deleted') Object.assign(next, { status: 'deleted', deletedAt: t.deletedAt });
       delete next.pending;
       this.s.put('task', next);
       for (const a of this.apps(t.id).filter(activeApplication))
         this.notify(a.userId, '新的服务安排已生效', `task/${t.id}`);
-      for (const b of this.bookings(t.id).filter(activeBooking)) {
-        Object.assign(b, { start: next.start, end: next.end });
+      for (const b of this.bookings(t.id).filter((b) => activeBooking(b) && b.redemptionMode !== 'instant')) {
+        Object.assign(b, { start: next.start, end: next.end, title: next.title, itemName: next.itemName, address: next.address, offerType: next.offerType || 'service', specification: next.specification || '', fulfillment: next.fulfillment || '', coverId: next.coverId || '' });
         this.s.put('booking', b);
         this.notify(b.userId, '兑换项目新安排已生效', `booking/${b.id}`);
       }
@@ -587,22 +586,29 @@ export class Domain {
         t.kind === 'redeem' &&
         t.status === 'published' &&
         !t.pending &&
-        t.start > now() &&
-        t.deadline > now(),
-      '兑换项目不可预约',
+        ((t.offerType === 'goods' && !t.start) || (t.start > now() && t.deadline > now())),
+      '兑换项目暂不可兑换',
       409,
     );
-    check(b.consent === true, '请确认已获得受助者同意');
+    check(b.consent === true, t.offerType === 'goods' ? '请确认已核对物品规格与兑换时长' : '请确认已获得使用人同意');
     const duplicate = this.bookings(id).find((x) => x.userId === u.id && activeBooking(x));
     if (duplicate) return this.bookingView(u, duplicate);
-    check(this.bookings(id).filter(activeBooking).length < t.capacity, '预约名额已满', 409);
+    const phone = text(b.phone, '联系电话', 30);
+    check(/^[+\d][\d\s()-]{5,29}$/.test(phone), '请填写有效的联系电话');
+    const instant = t.offerType === 'goods';
+    check(t.capacity === null || this.bookings(id).filter(activeBooking).length < t.capacity, '预约名额已满', 409);
     check(this.account(u.id, t.owner).available >= t.minutes, '对应机构可用时间不足', 409);
-    check(!this.conflict(u.id, t.start, t.end, id), '与已有安排时间冲突', 409);
+    if (t.start) check(!this.conflict(u.id, t.start, t.end, id), '与已有安排时间冲突', 409);
     const bk = this.s.put('booking', {
       owner: t.owner,
       userId: u.id,
       taskId: id,
       title: t.title,
+      offerType: t.offerType || 'service',
+      itemName: t.itemName,
+      specification: t.specification || '',
+      fulfillment: t.fulfillment || '',
+      coverId: t.coverId || '',
       region: t.region,
       address: t.address,
       lat: t.lat,
@@ -610,19 +616,25 @@ export class Domain {
       cell: t.cell,
       start: t.start,
       end: t.end,
-      held: t.minutes,
-      status: 'pending',
-      recipient: text(b.recipient, '受助对象', 100),
-      phone: text(b.phone, '联系电话', 30),
+      held: instant ? 0 : t.minutes,
+      status: instant ? 'completed' : 'pending',
+      recipient: text(b.recipient, instant ? '申请人姓名' : '服务使用人', 100),
+      phone,
       needs: text(b.needs || '', '服务需要', 1000, false),
       consent: true,
-      charged: 0,
+      charged: instant ? t.minutes : 0,
+      ...(instant ? { redemptionMode: 'instant', applicantName: u.name, completedAt: now() } : {}),
     });
-    this.notify(t.owner, '收到新的兑换预约', `booking/${bk.id}`);
+    if (instant) {
+      this.postLedger(u.id, t.owner, -bk.charged, 'redeem', `booking:${bk.id}`, id, '物品兑换成功');
+      this.audit(u, bk.id, 'redeem', null, bk);
+      this.notify(u.id, '兑换成功，请等待工作人员联系你', `booking/${bk.id}`);
+      this.notify(t.owner, '收到新的物品兑换，请联系申请人', `booking/${bk.id}`);
+    } else this.notify(t.owner, '收到新的兑换预约', `booking/${bk.id}`);
     return this.bookingView(u, bk);
   }
   bookingView(u, b) {
-    return { ...b, applicant: this.s.user(b.userId)?.name, orgName: this.s.user(b.owner)?.name };
+    return { ...b, applicant: b.applicantName || this.s.user(b.userId)?.name, orgName: this.s.user(b.owner)?.name };
   }
   cancelBooking(u, bk, b) {
     if (['cancelled', 'rejected'].includes(bk.status)) return bk;
@@ -647,6 +659,7 @@ export class Domain {
     const bk = this.s.get('booking', id);
     check(bk, '预约不存在', 404);
     check([bk.owner, bk.userId].includes(u.id), '无权访问该预约', 403);
+    check(bk.redemptionMode !== 'instant', '物品已兑换，请通过联系电话沟通领取', 409);
     const org = u.id === bk.owner;
     const t = this.s.get('task', bk.taskId);
     const before = structuredClone(bk);
@@ -662,6 +675,7 @@ export class Domain {
       check(bk.status === 'pending' && !t.pending, '当前状态不能接受预约', 409);
       bk.status = 'accepted';
     } else if (b.action === 'reschedule') {
+      check(bk.start, '此物品无需预约领取时间', 409);
       check(['pending', 'accepted'].includes(bk.status) && !t.pending, '当前不能改约', 409);
       const start = date(b.start, '新开始时间'),
         end = date(b.end, '新结束时间');
@@ -691,7 +705,7 @@ export class Domain {
       if (b.answer === 'decline') this.cancelBooking(u, bk, { reason: '不同意项目变更' });
       else {
         const proposed = t.pending.proposed;
-        check(!this.conflict(u.id, proposed.start, proposed.end, t.id), '新时间冲突', 409);
+        if (proposed.start) check(!this.conflict(u.id, proposed.start, proposed.end, t.id), '新时间冲突', 409);
         const extra = proposed.minutes - bk.held;
         check(extra <= 0 || this.account(u.id, bk.owner).available >= extra, '变更后可用时间不足');
         bk.held = proposed.minutes;
@@ -703,7 +717,7 @@ export class Domain {
       check(org, '仅需求方提交履约结果', 403);
       check(['accepted', 'disputed'].includes(bk.status), '当前不能提交履约结果', 409);
       check(!t.pending, '请先完成项目变更确认', 409);
-      check(Date.parse(bk.start) <= Date.now(), '不能提前确认尚未开始的服务');
+      if (bk.start) check(Date.parse(bk.start) <= Date.now(), '不能提前确认尚未开始的服务');
       const minutes = integer(b.minutes, '拟结算分钟', 0, 1440);
       check(minutes <= bk.held, '追加时长须先由申请人确认增加占用');
       bk.result = {
@@ -713,6 +727,7 @@ export class Domain {
       };
       bk.status = 'result_pending';
     } else if (b.action === 'extra') {
+      check(bk.offerType !== 'goods', '物品兑换不支持追加服务', 409);
       check(org && bk.status === 'accepted' && !bk.extra, '当前不能提出追加服务或已有待确认申请', 409);
       bk.extra = {
         minutes: integer(b.minutes, '追加分钟', 1, 1440),
@@ -781,7 +796,7 @@ export class Domain {
       hasBooking = this.bookings(t.id).some((b) => b.userId === u?.id && activeBooking(b));
     const full = mine || (self && (activeApplication(self) || self.wasAccepted)) || hasBooking;
     const participants = t.kind === 'help' ? apps : this.bookings(t.id);
-    const displayStatus = ['draft', 'paused', 'cancelled'].includes(t.status)
+    const displayStatus = (t.offerType === 'goods' && !t.start) || ['paused', 'cancelled'].includes(t.status)
       ? t.status
       : participants.some((a) => ['checked_in', 'submitted', 'disputed', 'result_pending'].includes(a.status))
         ? 'in_progress'
@@ -797,7 +812,7 @@ export class Domain {
       ...t,
       displayStatus,
       orgName: this.s.user(t.owner)?.name,
-      remaining: Math.max(
+      remaining: t.capacity === null ? null : Math.max(
         0,
         t.capacity -
           (t.kind === 'help'
@@ -821,17 +836,17 @@ export class Domain {
   }
   tasks(u, filter = {}) {
     this.actor(u);
-    let items = this.s.all('task').filter((t) => t.owner === u.id || t.status !== 'draft');
+    let items = this.s.all('task').filter((t) => ['published', 'paused', 'cancelled'].includes(t.status));
     if (filter.scope === 'mine')
       items = items.filter((t) =>
         u.role === 'requester' ? t.owner === u.id : this.apps(t.id).some((a) => a.userId === u.id),
       );
-    else items = items.filter((t) => t.status === 'published' && t.start > now());
+    else items = items.filter((t) => t.status === 'published' && ((t.offerType === 'goods' && !t.start) || t.start > now()));
     if (filter.kind) items = items.filter((t) => t.kind === filter.kind);
     if (filter.org) items = items.filter((t) => t.owner === filter.org);
     if (filter.region) items = items.filter((t) => t.region.includes(filter.region));
     if (filter.available === '1')
-      items = items.filter((t) => t.status === 'published' && t.start > now() && t.deadline > now() && !t.pending && this.apps(t.id).filter(activeApplication).length < t.capacity);
+      items = items.filter((t) => t.status === 'published' && !t.pending && ((t.offerType === 'goods' && !t.start) || (t.start > now() && t.deadline > now() && this.apps(t.id).filter(activeApplication).length < t.capacity)));
     if (filter.q)
       items = items.filter((t) =>
         [t.title, t.region, this.s.user(t.owner)?.name]
@@ -863,14 +878,16 @@ export class Domain {
         const delta = (a.route.distance ?? Infinity) - (b.route.distance ?? Infinity);
         if (delta) return delta;
       }
-      return a.start.localeCompare(b.start);
+      return a.start && b.start ? a.start.localeCompare(b.start) : b.created.localeCompare(a.created);
     });
   }
   task(u, id) {
     this.actor(u);
     const t = this.s.get('task', id);
-    check(t && (t.status !== 'draft' || t.owner === u.id), '需求不存在', 404);
-    return this.taskView(u, t);
+    check(t && ['published', 'paused', 'cancelled'].includes(t.status), '需求不存在', 404);
+    // Service destinations are public in task details; contact and recipient data
+    // retain their existing access rules. Map lists still use coarse locations.
+    return { ...this.taskView(u, t), address: t.address, lat: t.lat, lng: t.lng, place: t.place };
   }
   records(u) {
     return this.s.all('record').filter((r) => r.owner === u.id || r.userId === u.id);
@@ -953,7 +970,7 @@ export class Domain {
       for (const b of this.s
         .all('booking')
         .filter(
-          (b) => b.status === 'completed' && b.charged > 0 && b.cell && (scope === 'all' || b.owner === u.id),
+          (b) => b.redemptionMode !== 'instant' && b.status === 'completed' && b.charged > 0 && b.cell && (scope === 'all' || b.owner === u.id),
         ))
         events.set('booking:' + b.id, {
           id: 'booking:' + b.id,
@@ -966,8 +983,10 @@ export class Domain {
         });
     const cells = new Map();
     for (const e of events.values()) {
-      const c = cells.get(e.cell) || {
-        cell: e.cell,
+      const key = regionKey(e.region);
+      const c = cells.get(key) || {
+        cell: 'region:' + key,
+        locationCell: e.cell,
         region: e.region,
         count: 0,
         volunteers: [],
@@ -978,17 +997,16 @@ export class Domain {
       c.volunteers.push(...e.users);
       c.categories.push(e.category);
       if (c.latest < e.updated) c.latest = e.updated;
-      cells.set(e.cell, c);
+      cells.set(key, c);
     }
     const own = records.filter((r) => (u.role === 'requester' ? r.owner === u.id : r.userId === u.id));
     const ownBookings =
       u.role === 'requester'
-        ? this.s.all('booking').filter((b) => b.owner === u.id && b.status === 'completed' && b.charged > 0)
+        ? this.s.all('booking').filter((b) => b.redemptionMode !== 'instant' && b.owner === u.id && b.status === 'completed' && b.charged > 0)
         : [];
     const ownCells = new Set(
-      [...own.map((r) => this.s.get('task', r.taskId).cell), ...ownBookings.map((b) => b.cell)].filter(
-        Boolean,
-      ),
+      [...own.map((r) => this.s.get('task', r.taskId)), ...ownBookings]
+        .filter((t) => t.cell).map((t) => regionKey(t.region)),
     );
     return {
       cells: [...cells.values()].map((c) => ({
@@ -1006,42 +1024,8 @@ export class Domain {
           ownBookings.filter((b) => !b.cell).length,
       },
       provider: this.adapters.status?.map || 'manual',
-      message: '已填写坐标的真实记录按固定网格统计，未填写坐标的记录等待补充；公开地图仅显示概略位置。',
+      message: '已确认服务按所属区域汇总，地图沿可查询的真实区域边界展示成果；边界缺失的区域仅显示概略标记。',
     };
-  }
-  comment(u, ref, b) {
-    this.actor(u);
-    const task = this.s.get('task', ref),
-      booking = this.s.get('booking', ref);
-    const allowed =
-      (task &&
-        (task.owner === u.id ||
-          this.apps(ref).some((a) => a.userId === u.id && (activeApplication(a) || a.wasAccepted)))) ||
-      (booking && [booking.owner, booking.userId].includes(u.id));
-    check(allowed, '仅相关参与者可留言', 403);
-    const entry = this.s.put('comment', {
-      owner: u.id,
-      ref,
-      content: text(b.content, '留言／评价', 2000),
-      type: b.type === 'review' ? 'review' : 'message',
-      name: u.name,
-    });
-    const target = booking ? (u.id === booking.owner ? booking.userId : booking.owner) : task.owner;
-    if (target !== u.id) this.notify(target, '收到任务留言', booking ? `booking/${ref}` : `task/${ref}`);
-    return entry;
-  }
-  comments(u, ref) {
-    const task = this.s.get('task', ref),
-      bk = this.s.get('booking', ref);
-    check(
-      (task &&
-        (task.owner === u.id ||
-          this.apps(ref).some((a) => a.userId === u.id && (activeApplication(a) || a.wasAccepted)))) ||
-        (bk && [bk.owner, bk.userId].includes(u.id)),
-      '无权查看留言',
-      403,
-    );
-    return this.s.all('comment').filter((c) => c.ref === ref);
   }
   notices(u) {
     for (const a of this.s

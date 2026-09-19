@@ -85,7 +85,7 @@ try {
   await page.getByRole('tab', { name: '发放记录', exact: true }).click();
   await expect(records).toHaveCount(4);
   await page.getByRole('tab', { name: '兑换服务', exact: true }).click();
-  await expect(page.locator('.rb-offer')).toHaveCount(2);
+  await expect(page.locator('.rb-offer')).toHaveCount(1);
   await page.getByRole('link', { name: '新增兑换服务', exact: true }).click();
   await expect(page).toHaveURL(/#publish\/redeem$/);
   await page.getByRole('button', { name: '返回', exact: true }).click();
@@ -116,10 +116,10 @@ try {
   await expect(page.locator('.rb-org-name')).toContainText('西湖社区服务中心（更新）');
   await visit('profile', '.requester-profile');
   await page.getByRole('button', { name: '已完成帮扶 4次', exact: true }).click();
-  await expect(page.locator('.requester-filter.active')).toHaveText('已完成');
+  await expect(page.locator('.requester-filter.active')).toHaveText('历史记录');
   await visit('profile', '.requester-profile');
   await page.locator('.rp-menu-row[data-action=history]').click();
-  await expect(page.locator('.requester-filter.active')).toHaveText('全部');
+  await expect(page.locator('.requester-filter.active')).toHaveText('历史记录');
   await visit('profile', '.requester-profile');
   await page.locator('.rp-menu-row[data-action=my-bookings]').click();
   await expect(page.locator('.rb-tab.active')).toHaveText('兑换预约');

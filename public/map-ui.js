@@ -52,7 +52,7 @@ function needCard(t, isRequester) {
     <img class="map-task-image" src="/map-service.webp" width="128" height="128" alt="志愿者陪伴长者的主题插画">
     <div class="map-task-heading"><h3>${esc(t.title)}</h3><p>${icon('building')}<span>${esc(t.orgName)}</span></p></div>
     ${link(`${label}${icon('arrow')}`, 'task/' + t.id, 'map-task-cta')}
-    <div class="map-task-meta"><span>${icon('calendar')}${esc(appointment(t.start))}</span><span>${icon('clock')}${hours(t.minutes)}小时</span><span>${icon('navigation')}到达时间待确认</span></div>
+    <div class="map-task-meta"><span>${icon('calendar')}${esc(appointment(t.start))}</span><span>${icon('clock')}${hours(t.minutes)}小时</span></div>
   </article>`;
 }
 
@@ -67,7 +67,6 @@ export function mapContent({ state, data, needs, cells, action, pending }) {
   const selectedCell = cells.find((c) => c.cell === state.selectedCell);
   const selectedIndex = cells.indexOf(selectedCell);
   const s = data.summary;
-  const filterCount = Object.values(state.filter).filter(Boolean).length;
   const city =
     live && !state.mapAutoLocateAttempted
       ? '定位中…'
@@ -94,10 +93,9 @@ export function mapContent({ state, data, needs, cells, action, pending }) {
         </div>
         <div class="map-controls">
           <label class="map-needs-toggle"><span>待帮助</span><input type="checkbox" role="switch" id="show-needs" aria-label="显示待帮助" ${state.showNeeds ? 'checked' : ''}><span class="switch-track" aria-hidden="true"></span></label>
-          ${btn(icon('filter') + (filterCount ? '<span class="map-filter-dot" aria-hidden="true"></span>' : ''), 'map-filter', '', 'map-filter' + (filterCount ? ' is-active' : ''), 'aria-label="筛选爱心需求" title="' + (filterCount ? '已设置 ' + filterCount + ' 项筛选' : '筛选爱心需求') + '"')}
           ${btn(icon('locate'), 'map-locate', '', 'map-locate', 'aria-label="回到当前位置" title="回到当前位置"' + (state.mapLocating ? ' disabled aria-busy="true"' : ''))}
         ${live ? '<div class="baidu-zoom"><button type="button" data-action="map-zoom-in" aria-label="放大地图">+</button><button type="button" data-action="map-zoom-out" aria-label="缩小地图">−</button></div>' : ''}</div>
-        ${live ? '<button type="button" class="map-this-area" data-action="map-this-area" hidden>查看此区域</button><span id="baidu-map-note">公开位置已概略化</span>' : ''}
+        ${live ? '<span id="baidu-map-note" hidden></span>' : ''}
         <div class="map-pins" aria-label="服务区域示意标记" ${live ? 'hidden' : ''}>
           ${cells
             .slice(0, 3)
@@ -119,53 +117,34 @@ export function mapContent({ state, data, needs, cells, action, pending }) {
           }
         </div>
         ${!live && !cells.length && (!state.showNeeds || !needs.length) ? `<div class="map-first-light">${icon('heart')}<span>${mine ? '完成一次真实帮助<br>留下你的第一束光' : '每一份善意<br>都让这座城市更温暖'}</span></div>` : ''}
-        <div class="map-caption">${btn((live ? '百度地图 · 区域列表 ' : '插画示意 · 区域列表 ') + icon('arrow'), 'map-regions', '', 'map-caption-button', 'aria-label="查看全部区域与需求"')}</div>
         ${isRequester ? link(icon('plus') + ' 发布需求', 'publish/help', 'map-publish') : ''}
       </section>
     </div>
     <section class="map-sheet" aria-label="${isRequester ? '本机构成果与待办' : '我的成果与附近需求'}">
       ${btn('<span></span>', 'collapse', '', 'map-sheet-grab', `aria-label="${state.collapsed ? '展开需求面板' : '收起需求面板'}" aria-expanded="${!state.collapsed}" aria-controls="map-action" title="上下拖动，展开或收起需求面板"`)}
       <div class="map-summary-banner">
-        <div class="map-summary-intro">
-          <span class="map-summary-avatar" aria-hidden="true"><img src="/map-service.webp" alt="" width="80" height="80"></span>
-          <div class="map-summary-copy"><h2>让善意随时发生<span class="map-summary-rays" aria-hidden="true"><i></i><i></i><i></i></span></h2><p>${isRequester ? '一起让身边的需求被看见' : '谢谢你，点亮更多人的生活'}</p></div>
+        <div class="map-summary-intro${isRequester ? ' is-requester' : ''}">
+          ${isRequester ? `<span class="map-summary-avatar map-org-avatar" role="img" aria-label="${esc(state.user.name)}的机构头像"></span>` : '<span class="map-summary-avatar" aria-hidden="true"><img src="/map-service.webp" alt="" width="80" height="80"></span>'}
+          <div class="map-summary-copy"><h2>${isRequester ? esc(state.user.name) : '让善意随时发生<span class="map-summary-rays" aria-hidden="true"><i></i><i></i><i></i></span>'}</h2><p>${isRequester ? '需求方' : '谢谢你，点亮更多人的生活'}</p></div>
         </div>
         <div class="map-stats">${stat('pin', isRequester ? '本机构点亮' : '已点亮地点', s.places, '个', 'footprints')}${stat('heart', isRequester ? '完成帮扶' : '完成服务', s.services, '次', 'history')}${stat(isRequester ? 'clipboard' : 'clock', isRequester ? '待处理事项' : '累计贡献', isRequester ? pending : hours(s.minutes), isRequester ? '项' : '小时', isRequester ? 'map-todo' : 'map-contribution')}</div>
       </div>
       <div class="map-sheet-scroll" ${state.collapsed ? 'hidden' : ''}>
       <div id="map-action" ${state.collapsed ? 'hidden' : ''}>
-        <div class="map-action-title"><h2>${icon('heart')}${selectedCell ? '这里的爱心记忆' : isRequester ? '需要你处理的事项' : action?.application ? '我的服务安排' : '附近的爱心需求'}</h2>${selectedCell || state.selectedTask ? btn('取消选中 ' + icon('close'), 'map-clear', '', 'map-more') : btn('查看更多 ' + icon('arrow'), 'map-more', '', 'map-more')}</div>
+        <div class="map-action-title"><h2>${icon('heart')}${selectedCell ? '这里的爱心记忆' : isRequester ? '需要你处理的事项' : action?.application ? '我的服务安排' : '附近的爱心需求'}</h2>${selectedCell || state.selectedTask ? '' : btn('查看更多 ' + icon('arrow'), 'map-more', '', 'map-more')}</div>
         ${selectedCell ? regionCard(selectedCell, selectedIndex, mine) : needCard(action, isRequester)}
         ${
           !isRequester && !selectedCell
             ? '<div class="map-additional-needs">' +
               needs
                 .filter((t) => t.id !== action?.id)
-                .map((t) =>
-                  link(
-                    '<span class="map-nearby-icon">' +
-                      icon(needIcons[t.category] || 'users') +
-                      '</span><span class="map-nearby-copy"><b>' +
-                      esc(t.title) +
-                      '</b><small>' +
-                      esc(t.region) +
-                      ' · ' +
-                      esc(appointment(t.start)) +
-                      ' · ' +
-                      hours(t.minutes) +
-                      '小时</small></span>' +
-                      icon('arrow'),
-                    'task/' + t.id,
-                    'map-nearby-item',
-                  ),
-                )
+                .slice(0, 2)
+                .map((t) => needCard(t, false))
                 .join('') +
               '</div>'
             : ''
         }
-        ${data.summary.pendingLocation ? `<p class="map-pending-location">${data.summary.pendingLocation} 条已核实服务待补充地点，时长已入账。</p>` : ''}
       </div>
-      <p class="map-privacy">${icon('info')}地图上仅展示大致服务位置，不显示个人隐私信息</p>
       </div>
     </section>
   </div>`;

@@ -1,6 +1,8 @@
 import { esc, icon } from './ui.js';
 import { gridGeometry, validPoint } from './map-geo.js';
 import { locationAccessMessage } from './location-access.js';
+import { currentLocation } from './current-location.js';
+import { boundaryQuery } from './map-region.js';
 
 let sdkPromise;
 const delayResult = (work, message, ms = 12000) =>
@@ -59,6 +61,8 @@ class LoveMap {
     this.overlays = [];
     this.geometry = new Map();
     this.regions = new Map();
+    this.boundaries = new Map();
+    this.areaPaths = new Map();
     this.points = new Map();
     this.generation = 0;
     this.lastCity = null;
@@ -81,6 +85,24 @@ class LoveMap {
         this.host = document.createElement('div');
         this.host.className = 'baidu-map-canvas';
         this.host.setAttribute('aria-label', '百度地图，可拖动和缩放');
+        let gesture;
+        this.host.addEventListener('pointerdown', event => {
+          gesture = { x: event.clientX, y: event.clientY, moved: !event.isPrimary };
+        }, true);
+        this.host.addEventListener('pointermove', event => {
+          if (gesture && Math.hypot(event.clientX - gesture.x, event.clientY - gesture.y) > 6)
+            gesture.moved = true;
+        }, true);
+        this.host.addEventListener('pointercancel', () => { if (gesture) gesture.moved = true; }, true);
+        const clearOnBlank = event => {
+          if (gesture?.moved || event.target.closest('.map-pin,button,a,input,select')) return;
+          if (this.host.isConnected && (this.state?.selectedTask || this.state?.selectedCell))
+            this.callbacks.select('map-clear');
+        };
+        this.host.addEventListener('click', clearOnBlank, true);
+        this.host.addEventListener('pointerup', event => {
+          if (event.pointerType === 'touch') clearOnBlank(event);
+        }, true);
         slot.append(this.host);
         this.map = new this.B.Map(this.host, { enableMapClick: false, enableIconClick: false });
         this.map.addEventListener('tilesloaded', () => {
@@ -93,12 +115,6 @@ class LoveMap {
         });
         this.map.centerAndZoom(new this.B.Point(120.1551, 30.2741), 13);
         this.map.enableScrollWheelZoom(true);
-        this.map.addControl(new this.B.ScaleControl({ anchor: 2 }));
-        this.map.addEventListener('dragend', () => {
-          const b = document.querySelector('[data-action="map-this-area"]');
-          if (b) b.hidden = false;
-        });
-        // Keep copyright, provider logo and native scale visible.
         this.resize = new ResizeObserver(() => this.map.checkResize?.());
         this.resize.observe(this.host);
       } else this.map.checkResize?.();
@@ -185,6 +201,29 @@ class LoveMap {
     }
     return this.geometry.get(cell);
   }
+  async regionBoundary(region) {
+    const query = boundaryQuery(region);
+    if (!query) return [];
+    if (!this.boundaries.has(query)) {
+      const request = delayResult((resolve, reject) => {
+        new this.B.Boundary().get(query, (result) => {
+          if (!Array.isArray(result?.boundaries)) {
+            reject(new Error('区域边界查询失败，请重试。'));
+            return;
+          }
+          const paths = result.boundaries.map((boundary) => new this.B.Polygon(boundary).getPath());
+          if (!paths.every((path) => path.length >= 3 && path.every(validPoint))) {
+            reject(new Error('区域边界数据无效，请重试。'));
+            return;
+          }
+          resolve(paths);
+        });
+      }, '区域边界查询超时，请重试。');
+      this.boundaries.set(query, request);
+      request.catch(() => this.boundaries.delete(query));
+    }
+    return this.boundaries.get(query);
+  }
   pin(point, title, kind, id, selected = false) {
     const B = this.B;
     const action = kind === 'love' ? 'map-cell' : 'map-task';
@@ -196,6 +235,8 @@ class LoveMap {
         this.el.type = 'button';
         this.el.className = `map-pin baidu-pin map-pin-${kind === 'love' ? 'love' : 'need'} ${selected ? 'is-selected' : ''}`;
         this.el.setAttribute('aria-label', `${kind === 'love' ? '已点亮' : '待帮助'}：${title}`);
+        this.el.setAttribute('aria-pressed', String(selected));
+        this.el.title = title;
         this.el.innerHTML = `<span class="pin-shape">${icon(kind === 'love' ? 'heart' : 'users')}</span><span class="pin-label">${esc(title)}</span>`;
         this.el.addEventListener('click', (e) => {
           e.stopPropagation();
@@ -206,8 +247,8 @@ class LoveMap {
       }
       draw() {
         const p = this.map.pointToOverlayPixel(point);
-        this.el.style.left = `${p.x - 20}px`;
-        this.el.style.top = `${p.y - 43}px`;
+        this.el.style.left = `${p.x - (kind === 'need' ? 24 : 20)}px`;
+        this.el.style.top = `${p.y - (kind === 'need' ? 55 : 43)}px`;
       }
     }
     const pin = new Pin();
@@ -218,7 +259,10 @@ class LoveMap {
     for (const overlay of this.overlays) this.map.removeOverlay(overlay);
     this.overlays = [];
     this.points.clear();
+    this.areaPaths.clear();
     let missing = 0;
+    let missingBoundary = 0;
+    let failedBoundary = 0;
     const nodes = [
       ...state.cells.map((c) => ({ value: c, kind: 'love', id: c.cell })),
       ...(state.showNeeds ? state.mapNeeds.map((t) => ({ value: t, kind: 'need', id: t.id })) : []),
@@ -227,7 +271,7 @@ class LoveMap {
       await Promise.all(
         nodes.slice(i, i + 8).map(async ({ value, kind, id }) => {
           try {
-            const geometry = value.cell ? await this.cellGeometry(value.cell) : null;
+            const geometry = value.cell ? await this.cellGeometry(value.locationCell || value.cell) : null;
             const point = geometry?.center || (kind === 'need' ? await this.regionPoint(value.region) : null);
             if (generation !== this.generation) return;
             if (!point) {
@@ -235,15 +279,28 @@ class LoveMap {
               return;
             }
             if (kind === 'love' && geometry) {
-              const area = new this.B.Polygon(geometry.corners, {
-                strokeColor: '#ff805b',
-                strokeWeight: 2,
-                fillColor: '#ff996a',
-                fillOpacity: Math.min(0.42, 0.15 + value.brightness * 0.06),
-              });
-              area.addEventListener('click', () => this.callbacks.select('map-cell', id));
-              this.map.addOverlay(area);
-              this.overlays.push(area);
+              let paths;
+              try {
+                paths = await this.regionBoundary(value.region);
+              } catch {
+                failedBoundary++;
+                paths = [];
+              }
+              if (generation !== this.generation) return;
+              if (!paths.length) missingBoundary++;
+              this.areaPaths.set(id, paths);
+              for (const path of paths) {
+                const area = new this.B.Polygon(path, {
+                  strokeColor: state.selectedCell === id ? '#ed674c' : '#f18b6a',
+                  strokeWeight: state.selectedCell === id ? 3 : 2,
+                  strokeOpacity: 0.85,
+                  fillColor: '#ffb38b',
+                  fillOpacity: state.selectedCell === id ? 0.23 : 0.12,
+                });
+                area.addEventListener('click', () => this.callbacks.select('map-cell', id));
+                this.map.addOverlay(area);
+                this.overlays.push(area);
+              }
             }
             this.points.set(id, point);
             this.pin(
@@ -260,17 +317,65 @@ class LoveMap {
       );
       if (generation !== this.generation) return;
     }
+    if (generation !== this.generation) return;
     const note = document.querySelector('#baidu-map-note');
-    if (note) note.textContent = missing ? `${missing} 个地点暂未定位，可在区域列表查看` : '公开位置已概略化';
+    if (note) {
+      const messages = [
+        missing ? `${missing} 个地点暂未定位` : '',
+        missingBoundary ? `${missingBoundary} 个区域暂无可用边界，仅显示标记` : '',
+      ].filter(Boolean);
+      note.hidden = messages.length === 0 && !failedBoundary;
+      note.replaceChildren(document.createTextNode(messages.join('；')));
+      if (failedBoundary) {
+        const retry = document.createElement('button');
+        retry.type = 'button';
+        retry.dataset.action = 'refresh';
+        retry.textContent = '重试边界查询';
+        note.append(retry);
+      }
+    }
     if (this.fittedCity !== state.city && this.points.size) {
-      const view = this.map.getViewport([...this.points.values()], { margins: [150, 70, 60, 30] });
+      const view = this.map.getViewport([...this.points.values(), ...[...this.areaPaths.values()].flat(2)], { margins: this.areaMargins() });
       this.map.centerAndZoom(view.center, Math.min(view.zoom, 14));
       this.fittedCity = state.city;
     }
     const selected = state.selectedTask || state.selectedCell;
-    if (selected && selected !== this.lastSelected && this.points.has(selected))
-      this.map.panTo(this.points.get(selected));
+    if (selected && selected !== this.lastSelected && this.points.has(selected)) {
+      const paths = this.areaPaths.get(selected);
+      if (paths?.length) {
+        const view = this.map.getViewport(paths.flat(), { margins: this.areaMargins() });
+        this.map.centerAndZoom(view.center, Math.min(view.zoom, 16));
+      } else this.centerVisible(this.points.get(selected));
+    }
     this.lastSelected = selected;
+  }
+  areaMargins() {
+    const canvas = this.host.getBoundingClientRect();
+    const root = this.host.closest('.love-map');
+    const top = root?.querySelector('.map-scope')?.getBoundingClientRect().bottom ?? canvas.top;
+    const bottom = root?.querySelector('.map-sheet')?.getBoundingClientRect().top ?? canvas.bottom;
+    return [Math.max(30, top - canvas.top + 35), 45, Math.max(40, canvas.bottom - bottom + 35), 45];
+  }
+  requestRecenter() {
+    this.lastSelected = null;
+  }
+  centerVisible(point) {
+    if (!this.map || !this.host?.isConnected || !validPoint(point)) return;
+    const canvas = this.host.getBoundingClientRect();
+    const root = this.host.closest('.love-map');
+    const scope = root?.querySelector('.map-scope')?.getBoundingClientRect();
+    const sheet = root?.querySelector('.map-sheet')?.getBoundingClientRect();
+    // Center in the unobscured map, leaving room for the pin, label and attribution.
+    const top = Math.max(canvas.top, scope?.bottom ?? canvas.top) + 20;
+    const bottom = Math.min(canvas.bottom, sheet?.top ?? canvas.bottom) - 40;
+    const targetY = (top + Math.max(top, bottom)) / 2 - canvas.top;
+    const pixel = this.map.pointToPixel(point);
+    const center = this.map.pixelToPoint(
+      new this.B.Pixel(pixel.x, pixel.y + canvas.height / 2 - targetY),
+    );
+    this.map.panTo(center, {
+      noAnimation: globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false,
+    });
   }
   async search(query) {
     await this.ready();
@@ -303,26 +408,8 @@ class LoveMap {
     const unavailable = locationAccessMessage();
     if (unavailable) throw new Error(unavailable);
     await this.ready();
-    if (!navigator.geolocation) throw new Error('此浏览器不支持定位，请手动搜索所在位置。');
-    // No IP approximation: a denied GPS request must not appear as an exact user location.
-    const coords = await delayResult(
-      (resolve, reject) =>
-        navigator.geolocation.getCurrentPosition(
-          (p) => resolve(p.coords),
-          (e) =>
-            reject(
-              new Error(
-                e.code === 1
-                  ? '未获定位权限，请允许浏览器定位或手动搜索位置。'
-                  : '未能获取当前位置，请重试或手动搜索位置。',
-              ),
-            ),
-          { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 },
-        ),
-      '定位超时，请手动搜索所在位置。',
-      15000,
-    );
-    const [point] = await this.convert([{ lng: coords.longitude, lat: coords.latitude }]);
+    const coords = await currentLocation(true);
+    const [point] = await this.convert([coords]);
     this.located = point;
     this.focus(point, '当前位置');
     return point;

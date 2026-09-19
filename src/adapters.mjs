@@ -16,7 +16,6 @@ export function externalAdapters({ environment, smsProvider = 'development', sms
             ? 'configured'
             : 'unavailable',
       map: baiduEnabled ? 'baidu' : 'manual',
-      upload: development ? 'local' : 'unavailable',
     },
     async sendCode(phone, code) {
       if (development && smsProvider === 'development') return { developmentCode: code };

@@ -5,7 +5,7 @@ import { createTimewayServer } from '../server.mjs';
 import { cellFor } from '../src/common.mjs';
 import { gridGeometry, validPoint } from '../public/map-geo.js';
 
-test('public map geometry is the fixed grid, not the original private coordinate', () => {
+test('概略地图标记使用网格中心保护私人坐标', () => {
   for (const [lat, lng] of [
     [30.254123, 120.153456],
     [39.9024, 116.4053],

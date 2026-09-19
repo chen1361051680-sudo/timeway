@@ -55,14 +55,6 @@ export function seedRequesterHall(server) {
   apply(tasks[0]);
   const pending = [apply(tasks[0], false), apply(tasks[0], false)];
   const medical = [apply(tasks[1]), apply(tasks[1])];
-  const proposedStart = new Date(Date.parse(tasks[1].start) + 3600000).toISOString();
-  const proposedEnd = new Date(Date.parse(tasks[1].end) + 3600000).toISOString();
-  d.applicationAction(medical[0].user, medical[0].app.id, {
-    action: 'request-change',
-    start: proposedStart,
-    end: proposedEnd,
-    reason: '当天需要晚一小时到达',
-  });
   const household = apply(tasks[2]);
   const walk = apply(tasks[3]);
   const withdrawal = apply(tasks[3]);
