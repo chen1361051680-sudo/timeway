@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { once } from 'node:events';
@@ -29,7 +29,7 @@ test('hosted mobile testing reuses existing development data and keeps Secure se
     const cookie=r.headers.get('set-cookie').split(';')[0];
     assert.equal((await (await fetch(base+'/api/me',{headers:{cookie}})).json()).user.role,role);
   }
-  assert.match(await (await fetch(base)).text(),/手机测试环境/);
+  assert.equal(await (await fetch(base)).text(), readFileSync('public/index.html', 'utf8'));
   assert.equal(server.context.store.db.prepare('SELECT value FROM metadata WHERE key=?').get('environment').value,'development');
   assert.equal(server.context.store.user('demo-vol').name,'已有开发资料');assert.equal(server.context.store.all('feedback').length,1);
   const verify = new Store(productionPath,'production');

@@ -79,7 +79,6 @@ export function createTimewayServer(options = {}) {
           return;
         }
         body = await readFile(new URL(`./public/${file}`, import.meta.url));
-        if (file === 'index.html' && ctx.demoMode) body = body.toString().replace('</head>', '<link rel="stylesheet" href="/demo-mode.css"></head>').replace('<body>', '<body><div class="timeway-demo-banner" role="status">手机测试环境 · 开发数据库 · 模拟账号</div>');
         type = assetTypes[file.split('.').pop().toLowerCase()];
       }
       res.writeHead(200, { 'Content-Type': /^(image|font)\//.test(type) ? type : `${type}; charset=utf-8` });
