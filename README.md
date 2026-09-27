@@ -73,7 +73,7 @@ SQLite 按环境隔离，整数分钟记账；会话、OTP 和核心账务使用
 
 `.env`、数据库、附件、备份、密钥均在 Git 忽略范围。`npm run backup` 使用 SQLite 在线备份 API（包含已提交 WAL 数据），生成后执行完整性检查。
 
-项目域名为 `timeway.chhwork.cn`。部署约束见 `AGENTS.md`，SQLite 定时备份、目录权限和版本管理说明见 `docs/部署与运维说明.md`。
+项目域名为 `timeway.chhwork.cn`。SQLite 定时备份、目录权限和版本管理说明见 `docs/部署与运维说明.md`。
 
 ## 文档
 
